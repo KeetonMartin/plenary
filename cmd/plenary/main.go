@@ -29,6 +29,16 @@ func main() {
 	cmd := os.Args[1]
 	args := os.Args[2:]
 
+	// Check for subcommand --help
+	for _, a := range args {
+		if a == "--help" || a == "-h" {
+			if showSubcommandHelp(cmd) {
+				return
+			}
+			break
+		}
+	}
+
 	var err error
 	switch cmd {
 	case "create":
@@ -100,9 +110,156 @@ Commands:
   web          Start local web viewer
 
 Environment:
-  PLENARY_DB   Path to event store (default: .plenary/events.jsonl)
+  PLENARY_DB          Path to event store (default: .plenary/events.jsonl)
   PLENARY_ACTOR_ID    Your actor ID
-  PLENARY_ACTOR_TYPE  Your actor type (human|agent)`)
+  PLENARY_ACTOR_TYPE  Your actor type (human|agent)
+
+Run 'plenary <command> --help' for details on a specific command.`)
+}
+
+var subcommandHelp = map[string]string{
+	"create": `Usage: plenary create --topic <text> [--context <text>] [--decision-rule <rule>] [--deadline <iso8601>]
+
+Create a new plenary deliberation.
+
+Required:
+  --topic <text>           The topic or question to deliberate on
+
+Optional:
+  --context <text>         Additional context for participants
+  --decision-rule <rule>   Decision rule: unanimity (default), quorum, timeboxed
+  --deadline <iso8601>     Optional deadline
+
+Aliases: --rule is accepted for --decision-rule`,
+
+	"join": `Usage: plenary join --plenary <id> [--role <text>] [--lens <text>]
+
+Join an existing plenary as a participant.
+
+Required:
+  --plenary <id>    Plenary ID to join
+
+Optional:
+  --role <text>     Your role in this deliberation
+  --lens <text>     Your perspective/lens`,
+
+	"status": `Usage: plenary status --plenary <id>
+
+Show the derived snapshot (current state) of a plenary.
+
+Required:
+  --plenary <id>    Plenary ID`,
+
+	"propose": `Usage: plenary propose --plenary <id> --text <text> [--criteria <text>]
+
+Create a formal proposal for the group to consider.
+
+Required:
+  --plenary <id>    Plenary ID
+  --text <text>     The proposal text
+
+Optional:
+  --criteria <text>  Acceptance criteria`,
+
+	"consent": `Usage: plenary consent --plenary <id> --proposal <id> [--reason <text>]
+
+Consent to the active proposal.
+
+Required:
+  --plenary <id>     Plenary ID
+  --proposal <id>    Proposal ID (from 'plenary status')
+
+Optional:
+  --reason <text>    Reason for consenting`,
+
+	"block": `Usage: plenary block --plenary <id> --proposal <id> --reason <text> [--principle <text>] [--failure-mode <text>]
+
+Raise a block against the active proposal.
+
+Required:
+  --plenary <id>      Plenary ID
+  --proposal <id>     Proposal ID
+  --reason <text>     Why you are blocking
+
+Optional:
+  --principle <text>      Principle being violated
+  --failure-mode <text>   What failure this would cause`,
+
+	"stand-aside": `Usage: plenary stand-aside --plenary <id> --proposal <id> --reason <text>
+
+Stand aside from the active proposal (disagree but won't block consensus).
+
+Required:
+  --plenary <id>     Plenary ID
+  --proposal <id>    Proposal ID
+  --reason <text>    Why you are standing aside`,
+
+	"speak": `Usage: plenary speak --plenary <id> --text <text>
+
+Make a freeform contribution to the deliberation.
+
+Required:
+  --plenary <id>    Plenary ID
+  --text <text>     Your message
+
+Aliases: --message is accepted for --text`,
+
+	"phase": `Usage: plenary phase --plenary <id> --to <phase> --from <phase>
+
+Transition the plenary to a new phase.
+
+Required:
+  --plenary <id>    Plenary ID
+  --to <phase>      Target phase (framing, divergence, proposal, consensus_check, closed)
+  --from <phase>    Expected current phase (safety check)`,
+
+	"close": `Usage: plenary close --plenary <id> --resolution <text> [--outcome <outcome>]
+
+Close the plenary with a decision.
+
+Required:
+  --plenary <id>        Plenary ID
+  --resolution <text>   Summary of the decision
+
+Optional:
+  --outcome <outcome>   consensus (default), owner_decision, abandoned`,
+
+	"export": `Usage: plenary export --plenary <id> [--out <dir>]
+
+Export plenary artifacts to files (events.jsonl, snapshot.json, transcript.md, decision_record.json).
+
+Required:
+  --plenary <id>    Plenary ID
+
+Optional:
+  --out <dir>       Output directory (default: .plenary/exports/<id>)`,
+
+	"tail": `Usage: plenary tail --plenary <id> [--follow] [--interval-ms <ms>]
+
+Stream events for a plenary.
+
+Required:
+  --plenary <id>    Plenary ID
+
+Optional:
+  --follow          Keep watching for new events
+  --interval-ms <ms>  Poll interval in milliseconds (default: 500, min: 50)`,
+
+	"web": `Usage: plenary web [--port <port>]
+
+Start the local web viewer.
+
+Optional:
+  --port <port>    Port to listen on (default: 3000)`,
+}
+
+func showSubcommandHelp(cmd string) bool {
+	help, ok := subcommandHelp[cmd]
+	if !ok {
+		return false
+	}
+	fmt.Println(help)
+	return true
 }
 
 // --- Flag parsing helpers ---
@@ -305,7 +462,10 @@ func cmdCreate(store *plenary.JSONLStore, args []string) error {
 		return err
 	}
 	context, args := getFlag(args, "--context")
-	ruleStr, args := getFlag(args, "--rule")
+	ruleStr, args := getFlag(args, "--decision-rule")
+	if ruleStr == "" {
+		ruleStr, args = getFlag(args, "--rule")
+	}
 	deadline, _ := getFlag(args, "--deadline")
 
 	rule := plenary.RuleUnanimity
@@ -575,10 +735,15 @@ func cmdSpeak(store *plenary.JSONLStore, args []string) error {
 	if err != nil {
 		return err
 	}
-	text, _, err := requireFlag(args, "--message")
-	if err != nil {
-		return err
+	// Accept --text (canonical) or --message (alias)
+	text, args := getFlag(args, "--text")
+	if text == "" {
+		text, args = getFlag(args, "--message")
 	}
+	if text == "" {
+		return fmt.Errorf("%w: --text is required", plenary.ErrValidation)
+	}
+	_ = args
 
 	payload := plenary.TextPayload{Text: text}
 
