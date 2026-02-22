@@ -24,3 +24,25 @@ jobs:
 
       - name: Vet
         run: go vet ./...
+
+  test-webembed:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Build frontend
+        run: cd cmd/plenary/web && npm ci && npm run build
+
+      - name: Build (webembed)
+        run: go build -tags webembed ./cmd/plenary/
+
+      - name: Test (webembed)
+        run: go test -tags webembed -race -timeout 120s ./...

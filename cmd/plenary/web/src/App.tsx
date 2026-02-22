@@ -650,13 +650,16 @@ function App() {
       return;
     }
 
-    // Fetch initial data
+    // Fetch initial snapshot + events, then connect SSE
+    let initialEventCount = 0;
     Promise.all([
       fetch(`/api/plenaries/${selectedId}`).then((r) => r.json()),
       fetch(`/api/plenaries/${selectedId}/events`).then((r) => r.json()),
     ]).then(([snap, evts]) => {
       setSnapshot(snap);
-      setEvents(evts || []);
+      const eventList = evts || [];
+      setEvents(eventList);
+      initialEventCount = eventList.length;
     });
 
     // Connect SSE for live updates
@@ -664,6 +667,8 @@ function App() {
     sseRef.current = es;
 
     const seenIds = new Set<string>();
+    let sseEventCount = 0;
+    let snapshotRefreshTimer: ReturnType<typeof setTimeout> | null = null;
 
     es.onopen = () => setSSEConnected(true);
     es.onerror = () => setSSEConnected(false);
@@ -672,17 +677,26 @@ function App() {
         const evt: PlenaryEvent = JSON.parse(msg.data);
         if (seenIds.has(evt.event_id)) return;
         seenIds.add(evt.event_id);
+        sseEventCount++;
 
         setEvents((prev) => {
-          // Deduplicate
           if (prev.some((e) => e.event_id === evt.event_id)) return prev;
           return [...prev, evt];
         });
 
-        // Re-fetch snapshot to get updated derived state
-        fetch(`/api/plenaries/${selectedId}`)
-          .then((r) => r.json())
-          .then(setSnapshot);
+        // Only refetch snapshot for genuinely new events (not SSE replay).
+        // During replay, SSE re-sends all historical events. We already
+        // have the snapshot from the initial fetch, so skip refetch until
+        // we see events beyond the initial batch. Debounce to coalesce
+        // rapid bursts into a single fetch.
+        if (sseEventCount > initialEventCount) {
+          if (snapshotRefreshTimer) clearTimeout(snapshotRefreshTimer);
+          snapshotRefreshTimer = setTimeout(() => {
+            fetch(`/api/plenaries/${selectedId}`)
+              .then((r) => r.json())
+              .then(setSnapshot);
+          }, 300);
+        }
       } catch {
         // ignore parse errors
       }
@@ -692,6 +706,7 @@ function App() {
       es.close();
       sseRef.current = null;
       setSSEConnected(false);
+      if (snapshotRefreshTimer) clearTimeout(snapshotRefreshTimer);
     };
   }, [selectedId]);
 
