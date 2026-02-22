@@ -71,10 +71,19 @@
 
 ## v0 Completion Status
 
-**All planned v0 tasks are DONE.** 20 tests pass (`go test ./...`). The project is ready for:
-1. Initial git commit
-2. Keeton's review and feedback
-3. Next phase planning (dogfooding, polish, hosted version, packaging)
+**All planned v0 tasks are DONE.** v0 committed and pushed.
+
+## v1 Roadmap (decided via Plenary dogfood — consensus reached 2026-02-22)
+
+| Task | Owner | Status | Notes |
+|---|---|---|---|
+| HTTP API sidecar (`plenary serve`) | **Claude** | Starting | Expose append/status/list/tail/events over HTTP+JSON. SQLite shared store. |
+| Discovery & ergonomics (`plenary list`, env vars) | **Claude** | Starting | `plenary list`, `PLENARY_ID` env var, `--last` shorthand |
+| MCP tool-server (`plenary mcp-serve`) | Unclaimed | Pending | Expose plenary verbs as MCP tools for native agent framework integration |
+| SSE/webhook notifications | Unclaimed | Pending | Event stream endpoint on HTTP API |
+| Thin SDK wrappers (Python/TS) | Unclaimed | Pending | Only if MCP adoption proves insufficient |
+| Auth/identity/hosted sync | Unclaimed | Pending | Multi-tenant, deferred until product-market signal |
+| Dogfood UX fixes | Unclaimed | Pending | `--help` for all commands, auto-detect active proposal, consistent flag names (see DOGFOOD.md observations) |
 
 ## Rules
 
