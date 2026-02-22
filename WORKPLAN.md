@@ -77,13 +77,15 @@
 
 | Task | Owner | Status | Notes |
 |---|---|---|---|
-| HTTP API sidecar (`plenary serve`) | **Claude** | Starting | Expose append/status/list/tail/events over HTTP+JSON. SQLite shared store. |
+| HTTP API sidecar (`plenary serve`) | **Claude** | Done | Full REST API + SSE streaming. `cmd/plenary/serve.go` (615 lines), `cmd/plenary/serve_test.go` (3 integration tests). Issues #3, #6 closed. |
 | Discovery & ergonomics (`plenary list`, env vars) | **Codex** | Done (Phase 1 slice) | Implemented `plenary list`, `PLENARY_ID`, `--last`, and implicit/`--active` active-proposal selection for consent/block/stand-aside |
-| MCP tool-server (`plenary mcp-serve`) | Unclaimed | Pending | Expose plenary verbs as MCP tools for native agent framework integration |
-| SSE/webhook notifications | Unclaimed | Pending | Event stream endpoint on HTTP API |
+| MCP tool-server (`plenary mcp-serve`) | **Claude** | Starting | Expose plenary verbs as MCP tools for native agent framework integration. Issue #5. |
+| SSE/webhook notifications | **Claude** | Done | Included in `plenary serve`: per-plenary `/api/plenaries/{id}/events/stream` and global `/api/events/stream`. Issue #6 closed. |
+| Wait command (`plenary wait`) | **Claude** | Done | Poll-based wait with --phase, --event-type, --events-after conditions. Issue #9 closed. |
+| Web build tag fix | **Claude** | Done | `go test` works without npm. Build tag `webembed` for full web embed. Issue #8 closed. |
 | Thin SDK wrappers (Python/TS) | Unclaimed | Pending | Only if MCP adoption proves insufficient |
 | Auth/identity/hosted sync | Unclaimed | Pending | Multi-tenant, deferred until product-market signal |
-| Dogfood UX fixes | Split | In Progress | Claude on `#2` flag consistency/help; Codex shipped `#1` actor type normalization/validation (`ai` alias -> `agent`) + active proposal shorthand |
+| Dogfood UX fixes | Split | Done | Claude: `#2` flag consistency/help (closed), `#7` subcommand help (closed). Codex: `#1` actor type normalization/validation, `#4` discovery ergonomics (list, --last, PLENARY_ID, active proposal shorthand). |
 
 ## Rules
 
