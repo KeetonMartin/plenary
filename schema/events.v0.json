@@ -1,0 +1,314 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://plenary.dev/schema/events.v0.json",
+  "title": "Plenary Event Schema v0",
+  "description": "Defines the append-only event types for the Plenary consensus protocol.",
+
+  "$defs": {
+    "actor": {
+      "type": "object",
+      "properties": {
+        "actor_id": {
+          "type": "string",
+          "description": "Unique identifier for the participant (agent name, user handle, etc.)"
+        },
+        "actor_type": {
+          "type": "string",
+          "enum": ["human", "agent"],
+          "description": "Whether this actor is a human or an AI agent"
+        },
+        "delegator_id": {
+          "type": ["string", "null"],
+          "description": "If an agent is acting on behalf of a human, the human's ID"
+        }
+      },
+      "required": ["actor_id", "actor_type"]
+    },
+
+    "phase": {
+      "type": "string",
+      "enum": ["framing", "divergence", "proposal", "objections", "consensus_check", "closed"],
+      "description": "The deliberation phase"
+    },
+
+    "outcome": {
+      "type": "string",
+      "enum": ["consensus", "owner_decision", "abandoned"],
+      "description": "How the plenary was resolved"
+    },
+
+    "stance": {
+      "type": "string",
+      "enum": ["undeclared", "consent", "stand_aside", "block"],
+      "description": "A participant's current stance on the active proposal"
+    },
+
+    "decision_rule": {
+      "type": "string",
+      "enum": ["unanimity", "quorum", "timeboxed"],
+      "default": "unanimity",
+      "description": "The consensus rule for this plenary. Default is unanimity (any block prevents close)."
+    },
+
+    "base_event": {
+      "type": "object",
+      "properties": {
+        "event_id": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Unique event ID (UUIDv7 recommended for ordering)"
+        },
+        "plenary_id": {
+          "type": "string",
+          "format": "uuid",
+          "description": "The plenary this event belongs to"
+        },
+        "ts": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO 8601 timestamp"
+        },
+        "actor": { "$ref": "#/$defs/actor" },
+        "event_type": { "type": "string" },
+        "payload": { "type": "object" },
+        "integrity": {
+          "type": ["object", "null"],
+          "description": "Reserved for future tamper-evidence (hash, signature). Null in v0 local.",
+          "properties": {
+            "hash": { "type": "string" },
+            "sig": { "type": "string" },
+            "prev_hash": { "type": "string" }
+          }
+        }
+      },
+      "required": ["event_id", "plenary_id", "ts", "actor", "event_type", "payload"]
+    }
+  },
+
+  "type": "object",
+  "properties": {
+    "event_types": {
+      "type": "object",
+      "description": "All valid event types and their payload schemas",
+      "properties": {
+
+        "plenary.created": {
+          "description": "A new plenary is convened",
+          "type": "object",
+          "properties": {
+            "topic": { "type": "string" },
+            "context": { "type": "string", "description": "Background info, constraints, etc." },
+            "decision_rule": { "$ref": "#/$defs/decision_rule" },
+            "deadline": { "type": ["string", "null"], "format": "date-time" }
+          },
+          "required": ["topic", "decision_rule"]
+        },
+
+        "participant.joined": {
+          "description": "An actor joins the plenary",
+          "type": "object",
+          "properties": {
+            "role": { "type": ["string", "null"], "description": "Optional role (e.g. 'security-reviewer')" },
+            "lens": { "type": ["string", "null"], "description": "Optional perspective/lens" }
+          }
+        },
+
+        "phase.set": {
+          "description": "Transition to a new deliberation phase. Only valid if expected_phase matches current.",
+          "type": "object",
+          "properties": {
+            "phase": { "$ref": "#/$defs/phase" },
+            "expected_phase": { "$ref": "#/$defs/phase" }
+          },
+          "required": ["phase", "expected_phase"]
+        },
+
+        "position.submitted": {
+          "description": "Initial position statement (divergence phase). Ideally submitted before seeing others.",
+          "type": "object",
+          "properties": {
+            "text": { "type": "string" }
+          },
+          "required": ["text"]
+        },
+
+        "question.asked": {
+          "description": "A clarifying question",
+          "type": "object",
+          "properties": {
+            "text": { "type": "string" }
+          },
+          "required": ["text"]
+        },
+
+        "speak": {
+          "description": "Freeform contribution. Cannot create protocol state (use structured verbs for blocks, consents, etc.).",
+          "type": "object",
+          "properties": {
+            "text": { "type": "string" }
+          },
+          "required": ["text"]
+        },
+
+        "proposal.created": {
+          "description": "A formal proposal (the 'minute' in Quaker terms). One active proposal at a time in v0.",
+          "type": "object",
+          "properties": {
+            "proposal_id": { "type": "string", "format": "uuid" },
+            "text": { "type": "string" },
+            "acceptance_criteria": { "type": ["string", "null"] }
+          },
+          "required": ["proposal_id", "text"]
+        },
+
+        "concern.raised": {
+          "description": "A concern that doesn't rise to a block",
+          "type": "object",
+          "properties": {
+            "text": { "type": "string" },
+            "proposal_id": { "type": ["string", "null"], "format": "uuid" }
+          },
+          "required": ["text"]
+        },
+
+        "block.raised": {
+          "description": "A formal block. Must cite a principle/constraint and ideally a testable failure mode.",
+          "type": "object",
+          "properties": {
+            "text": { "type": "string" },
+            "principle": { "type": ["string", "null"] },
+            "failure_mode": { "type": ["string", "null"] },
+            "proposal_id": { "type": "string", "format": "uuid" }
+          },
+          "required": ["text", "proposal_id"]
+        },
+
+        "block.withdrawn": {
+          "description": "Withdraw a previously raised block",
+          "type": "object",
+          "properties": {
+            "reason": { "type": "string" },
+            "proposal_id": { "type": "string", "format": "uuid" }
+          },
+          "required": ["reason", "proposal_id"]
+        },
+
+        "amendment.proposed": {
+          "description": "Propose a change to the active proposal",
+          "type": "object",
+          "properties": {
+            "proposal_id": { "type": "string", "format": "uuid" },
+            "text": { "type": "string" },
+            "rationale": { "type": ["string", "null"] }
+          },
+          "required": ["proposal_id", "text"]
+        },
+
+        "amendment.applied": {
+          "description": "An amendment is accepted and applied to the proposal (facilitator action)",
+          "type": "object",
+          "properties": {
+            "proposal_id": { "type": "string", "format": "uuid" },
+            "new_text": { "type": "string" }
+          },
+          "required": ["proposal_id", "new_text"]
+        },
+
+        "consent.given": {
+          "description": "Participant consents to the active proposal",
+          "type": "object",
+          "properties": {
+            "proposal_id": { "type": "string", "format": "uuid" },
+            "reason": { "type": ["string", "null"] }
+          },
+          "required": ["proposal_id"]
+        },
+
+        "stand_aside.given": {
+          "description": "Participant stands aside — disagrees but won't block",
+          "type": "object",
+          "properties": {
+            "proposal_id": { "type": "string", "format": "uuid" },
+            "reason": { "type": "string" }
+          },
+          "required": ["proposal_id", "reason"]
+        },
+
+        "summary.computed": {
+          "description": "A system or facilitator-generated summary",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": ["phase_summary", "final_summary", "facilitator_recap"]
+            },
+            "text": { "type": "string" }
+          },
+          "required": ["kind", "text"]
+        },
+
+        "decision.closed": {
+          "description": "The plenary is closed with a final outcome",
+          "type": "object",
+          "properties": {
+            "outcome": { "$ref": "#/$defs/outcome" },
+            "decision_record": {
+              "type": "object",
+              "properties": {
+                "resolution": { "type": "string", "description": "The consensus statement / minute" },
+                "rationale_bullets": {
+                  "type": "array",
+                  "items": { "type": "string" }
+                },
+                "participants": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "actor_id": { "type": "string" },
+                      "actor_type": { "type": "string" },
+                      "role": { "type": ["string", "null"] },
+                      "final_stance": { "$ref": "#/$defs/stance" },
+                      "final_reason": { "type": ["string", "null"] }
+                    },
+                    "required": ["actor_id", "actor_type", "final_stance"]
+                  }
+                },
+                "objections": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "actor_id": { "type": "string" },
+                      "text": { "type": "string" },
+                      "status": {
+                        "type": "string",
+                        "enum": ["open", "resolved", "withdrawn"]
+                      },
+                      "resolution_note": { "type": ["string", "null"] }
+                    },
+                    "required": ["actor_id", "text", "status"]
+                  }
+                },
+                "action_items": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "text": { "type": "string" },
+                      "owner_id": { "type": ["string", "null"] },
+                      "due_at": { "type": ["string", "null"], "format": "date-time" }
+                    },
+                    "required": ["text"]
+                  }
+                }
+              },
+              "required": ["resolution", "participants"]
+            }
+          },
+          "required": ["outcome", "decision_record"]
+        }
+      }
+    }
+  }
+}

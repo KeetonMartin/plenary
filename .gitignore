@@ -1,0 +1,26 @@
+# Go
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Frontend
+cmd/plenary/web/node_modules/
+# Note: cmd/plenary/web/dist/ is NOT ignored — it's embedded in the Go binary
+
+# Plenary data
+.plenary/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+*.swp
+*.swo
+*~
+.vscode/
+.idea/

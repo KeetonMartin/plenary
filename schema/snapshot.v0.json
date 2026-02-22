@@ -1,0 +1,115 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://plenary.dev/schema/snapshot.v0.json",
+  "title": "Plenary Derived Snapshot v0",
+  "description": "The stable contract for `plenary status --json`. Produced by the reducer from the event log.",
+
+  "type": "object",
+  "properties": {
+    "plenary_id": { "type": "string", "format": "uuid" },
+    "topic": { "type": "string" },
+    "context": { "type": ["string", "null"] },
+    "phase": {
+      "type": "string",
+      "enum": ["framing", "divergence", "proposal", "objections", "consensus_check", "closed"]
+    },
+    "decision_rule": {
+      "type": "string",
+      "enum": ["unanimity", "quorum", "timeboxed"]
+    },
+    "deadline": { "type": ["string", "null"], "format": "date-time" },
+    "created_at": { "type": "string", "format": "date-time" },
+    "created_by": {
+      "type": "object",
+      "properties": {
+        "actor_id": { "type": "string" },
+        "actor_type": { "type": "string", "enum": ["human", "agent"] }
+      },
+      "required": ["actor_id", "actor_type"]
+    },
+
+    "participants": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "actor_id": { "type": "string" },
+          "actor_type": { "type": "string", "enum": ["human", "agent"] },
+          "role": { "type": ["string", "null"] },
+          "lens": { "type": ["string", "null"] },
+          "stance": {
+            "type": "string",
+            "enum": ["undeclared", "consent", "stand_aside", "block"]
+          },
+          "last_event_at": { "type": "string", "format": "date-time" }
+        },
+        "required": ["actor_id", "actor_type", "stance"]
+      }
+    },
+
+    "active_proposal": {
+      "type": ["object", "null"],
+      "properties": {
+        "proposal_id": { "type": "string", "format": "uuid" },
+        "text": { "type": "string" },
+        "acceptance_criteria": { "type": ["string", "null"] },
+        "proposed_by": { "type": "string" },
+        "proposed_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["proposal_id", "text", "proposed_by", "proposed_at"]
+    },
+
+    "unresolved_blocks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "actor_id": { "type": "string" },
+          "text": { "type": "string" },
+          "principle": { "type": ["string", "null"] },
+          "failure_mode": { "type": ["string", "null"] }
+        },
+        "required": ["actor_id", "text"]
+      }
+    },
+
+    "open_questions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "actor_id": { "type": "string" },
+          "text": { "type": "string" }
+        },
+        "required": ["actor_id", "text"]
+      }
+    },
+
+    "ready_to_close": {
+      "type": "boolean",
+      "description": "True if the consensus rule is satisfied and phase allows closing"
+    },
+
+    "next_required_actions": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Human-readable list of what's needed to progress (e.g. 'need consent from X')"
+    },
+
+    "outcome": {
+      "type": ["string", "null"],
+      "enum": ["consensus", "owner_decision", "abandoned", null],
+      "description": "Null while plenary is open; set when closed"
+    },
+
+    "event_count": {
+      "type": "integer",
+      "description": "Total number of events in this plenary"
+    }
+  },
+  "required": [
+    "plenary_id", "topic", "phase", "decision_rule",
+    "created_at", "created_by", "participants",
+    "unresolved_blocks", "ready_to_close", "event_count"
+  ]
+}
