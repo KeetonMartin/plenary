@@ -68,6 +68,8 @@ func main() {
 		err = cmdExport(store, args)
 	case "tail":
 		err = cmdTail(store, args)
+	case "wait":
+		err = cmdWait(store, args)
 	case "web":
 		err = cmdWeb(store, args)
 	case "serve":
@@ -113,6 +115,7 @@ Commands:
   close        Close the plenary with a decision
   export       Export plenary artifacts to files
   tail         Stream events for a plenary
+  wait         Wait for a condition (phase change, new events, etc.)
   web          Start local web viewer
   serve        Start HTTP API server with SSE
 
@@ -252,6 +255,25 @@ Required:
 Optional:
   --follow          Keep watching for new events
   --interval-ms <ms>  Poll interval in milliseconds (default: 500, min: 50)`,
+
+	"wait": `Usage: plenary wait --plenary <id> [--phase <phase>] [--event-type <type>] [--timeout <seconds>]
+
+Wait for a condition to be met, then exit. Useful for agent scripting.
+
+Required:
+  --plenary <id>         Plenary ID
+
+Conditions (at least one required):
+  --phase <phase>        Wait until plenary reaches this phase
+  --event-type <type>    Wait until an event of this type appears
+  --events-after <n>     Wait until event count exceeds n
+
+Optional:
+  --timeout <seconds>    Max wait time in seconds (default: 300)
+  --interval-ms <ms>     Poll interval in ms (default: 500, min: 50)
+
+Exits 0 when condition met. Outputs the triggering event as JSON.
+Exits 1 on timeout.`,
 
 	"web": `Usage: plenary web [--port <port>]
 
@@ -1127,5 +1149,88 @@ func cmdTail(store *plenary.JSONLStore, args []string) error {
 			}
 			seen[evt.EventID] = struct{}{}
 		}
+	}
+}
+
+func cmdWait(store *plenary.JSONLStore, args []string) error {
+	plenaryID, args, err := resolvePlenaryID(store, args)
+	if err != nil {
+		return err
+	}
+
+	targetPhase, args := getFlag(args, "--phase")
+	targetEventType, args := getFlag(args, "--event-type")
+	eventsAfterStr, args := getFlag(args, "--events-after")
+
+	timeoutSec := 300
+	if s, rest := getFlag(args, "--timeout"); s != "" {
+		args = rest
+		n, err := strconv.Atoi(s)
+		if err != nil || n < 1 {
+			return fmt.Errorf("%w: --timeout must be a positive integer", plenary.ErrValidation)
+		}
+		timeoutSec = n
+	}
+
+	intervalMS := 500
+	if s, rest := getFlag(args, "--interval-ms"); s != "" {
+		args = rest
+		n, err := strconv.Atoi(s)
+		if err != nil || n < 50 {
+			return fmt.Errorf("%w: --interval-ms must be an integer >= 50", plenary.ErrValidation)
+		}
+		intervalMS = n
+	}
+
+	if targetPhase == "" && targetEventType == "" && eventsAfterStr == "" {
+		return fmt.Errorf("%w: at least one condition required: --phase, --event-type, or --events-after", plenary.ErrValidation)
+	}
+
+	eventsAfter := -1
+	if eventsAfterStr != "" {
+		n, err := strconv.Atoi(eventsAfterStr)
+		if err != nil || n < 0 {
+			return fmt.Errorf("%w: --events-after must be a non-negative integer", plenary.ErrValidation)
+		}
+		eventsAfter = n
+	}
+
+	deadline := time.Now().Add(time.Duration(timeoutSec) * time.Second)
+
+	for {
+		events, err := store.ListByPlenary(plenaryID)
+		if err != nil {
+			return err
+		}
+
+		// Check events-after condition
+		if eventsAfter >= 0 && len(events) > eventsAfter {
+			if len(events) > 0 {
+				return printEventJSONLine(events[len(events)-1])
+			}
+			return nil
+		}
+
+		// Check phase condition
+		if targetPhase != "" && len(events) > 0 {
+			snap, err := plenary.Reduce(events)
+			if err == nil && string(snap.Phase) == targetPhase {
+				return printEventJSONLine(events[len(events)-1])
+			}
+		}
+
+		// Check event-type condition
+		if targetEventType != "" {
+			for i := len(events) - 1; i >= 0; i-- {
+				if events[i].EventType == targetEventType {
+					return printEventJSONLine(events[i])
+				}
+			}
+		}
+
+		if time.Now().After(deadline) {
+			return fmt.Errorf("timeout: condition not met within %d seconds", timeoutSec)
+		}
+		time.Sleep(time.Duration(intervalMS) * time.Millisecond)
 	}
 }
