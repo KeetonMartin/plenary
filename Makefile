@@ -1,4 +1,4 @@
-.PHONY: build build-full test test-full web clean
+.PHONY: build build-full test test-full web smoke-http clean
 
 # Build without web viewer (no npm required)
 build:
@@ -18,6 +18,10 @@ test:
 # Run tests including web embed
 test-full: web
 	go test -tags webembed ./...
+
+# Smoke-test two actors over the HTTP API (requires a running `plenary serve`)
+smoke-http:
+	bash scripts/http_cross_agent_smoke.sh
 
 clean:
 	rm -f plenary

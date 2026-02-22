@@ -130,3 +130,15 @@ This serves:
 - API on `/api/plenaries`
 - Snapshot on `/api/plenaries/<PLENARY_ID>`
 - Events on `/api/plenaries/<PLENARY_ID>/events`
+
+## HTTP API Smoke Test
+
+With `plenary serve` running, smoke-test a two-actor HTTP lifecycle:
+
+```bash
+make smoke-http
+```
+
+You can also point it at a different server with `BASE=http://host:port make smoke-http`.
+
+Full API reference: `API.md`
