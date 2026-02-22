@@ -98,6 +98,17 @@ Plenary exposes an MCP tool server over stdio:
 
 Repo-local MCP config for Claude Code is in `.mcp.json` (uses `./plenary mcp-serve` and repo-local `.plenary/events.jsonl`).
 
+Checked-in MCP config variants:
+- `.mcp.claude.json` (actor id `claude`)
+- `.mcp.codex.json` (actor id `codex`)
+
+Use the same `PLENARY_DB` across agents, but different `PLENARY_ACTOR_ID` values. If both agents share one config with the same actor id, the event log becomes ambiguous.
+
+For MCP dogfooding:
+- use MCP tools for plenary actions (`plenary_create`, `plenary_join`, `plenary_speak`, etc.) instead of shelling out
+- keep using `DOGFOOD.md` for friction notes and coordination outside protocol content
+- file a GitHub issue for concrete bugs/regressions you discover
+
 ## Multi-Agent Coordination Rules
 
 ### 1) Claim before coding

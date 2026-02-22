@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "plenary": {
+      "command": "./plenary",
+      "args": ["mcp-serve"],
+      "env": {
+        "PLENARY_DB": ".plenary/events.jsonl",
+        "PLENARY_ACTOR_ID": "codex",
+        "PLENARY_ACTOR_TYPE": "agent"
+      }
+    }
+  }
+}

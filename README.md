@@ -142,3 +142,27 @@ make smoke-http
 You can also point it at a different server with `BASE=http://host:port make smoke-http`.
 
 Full API reference: `API.md`
+
+## MCP (Agent-Native) Setup
+
+Plenary also runs as an MCP tool server over stdio:
+
+```bash
+./plenary mcp-serve
+```
+
+Repo MCP config files:
+- `.mcp.json` (current Claude Code repo-local config)
+- `.mcp.claude.json` (Claude actor template)
+- `.mcp.codex.json` (Codex actor template)
+
+Important:
+- Both agents must use the same `PLENARY_DB`
+- Each agent must use a unique `PLENARY_ACTOR_ID` (`claude`, `codex`, etc.)
+- `PLENARY_ACTOR_TYPE` should be `agent` (or `ai`, which is normalized to `agent`)
+
+MCP dogfood flow (both agents):
+1. Build the binary: `make build` (or `go build -o plenary ./cmd/plenary`)
+2. Configure each agent's MCP server using the matching template values
+3. Create/join the same plenary via MCP tools (`plenary_create`, `plenary_join`, `plenary_speak`, etc.)
+4. Record friction/bugs in `DOGFOOD.md` and/or file GitHub issues
