@@ -1,3 +1,5 @@
+//go:build webembed
+
 package main
 
 import (

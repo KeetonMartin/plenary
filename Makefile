@@ -1,13 +1,23 @@
-.PHONY: build test web clean
+.PHONY: build build-full test test-full web clean
 
-build: web
+# Build without web viewer (no npm required)
+build:
 	go build -o plenary ./cmd/plenary
+
+# Build with embedded web viewer
+build-full: web
+	go build -tags webembed -o plenary ./cmd/plenary
 
 web:
 	cd cmd/plenary/web && npm install && npm run build
 
-test: web
+# Run tests (no npm required)
+test:
 	go test ./...
+
+# Run tests including web embed
+test-full: web
+	go test -tags webembed ./...
 
 clean:
 	rm -f plenary
