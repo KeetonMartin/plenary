@@ -1,5 +1,5 @@
 # CLAUDE.md
 
-This repository uses `/Users/keetonmartin/code/plenary/AGENTS.md` as the canonical agent instructions.
+This repository uses `AGENTS.md` as the canonical agent instructions.
 
-Claude Code: read and follow `/Users/keetonmartin/code/plenary/AGENTS.md`.
+Claude Code: read and follow `AGENTS.md`.

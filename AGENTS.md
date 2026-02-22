@@ -35,29 +35,31 @@ Rule of thumb:
 
 ## Build / Test Basics
 
-Repo root is `/Users/keetonmartin/code/plenary`.
+Repo root is the repository root (this directory).
 
 ### Prereqs
 
 - Go
 - Node.js (for the web frontend build)
 
-### Important embed prerequisite
+### Web embed build tag (`webembed`)
 
-`/Users/keetonmartin/code/plenary/cmd/plenary/web.go` embeds `/Users/keetonmartin/code/plenary/cmd/plenary/web/dist`, so a fresh checkout may need the frontend build before `go test ./...` works.
+`go test ./...` works without building the frontend because the web UI embed is behind a build tag.
 
-Build frontend assets:
+To build a binary with the embedded web viewer (`plenary web` served from `cmd/plenary/web/dist`), build frontend assets first and compile with `-tags webembed`:
 
 ```bash
-cd /Users/keetonmartin/code/plenary/cmd/plenary/web
+cd cmd/plenary/web
 npm install
 npm run build
+cd ../..
+go build -tags webembed -o plenary ./cmd/plenary
 ```
 
 ### Common commands
 
 ```bash
-cd /Users/keetonmartin/code/plenary
+cd .
 make test      # preferred if available
 # or
 go test ./...
@@ -72,7 +74,7 @@ go build -o plenary ./cmd/plenary
 ### CLI actor identity
 
 ```bash
-export PLENARY_DB=/Users/keetonmartin/code/plenary/.plenary/events.jsonl
+export PLENARY_DB=.plenary/events.jsonl
 export PLENARY_ACTOR_ID=codex     # or claude / keeton
 export PLENARY_ACTOR_TYPE=agent   # 'ai' is normalized to 'agent' for compatibility
 ```
@@ -80,11 +82,21 @@ export PLENARY_ACTOR_TYPE=agent   # 'ai' is normalized to 'agent' for compatibil
 ### Web viewer
 
 ```bash
-cd /Users/keetonmartin/code/plenary
+cd .
 ./plenary web --port 3001
 ```
 
 If the UI loads but row clicks appear to do nothing, verify the backend process is still running and pointed at the correct DB (`PLENARY_DB`). The UI depends on detail fetches to `/api/plenaries/<id>` and `/api/plenaries/<id>/events`.
+
+### MCP server (agent-native integration)
+
+Plenary exposes an MCP tool server over stdio:
+
+```bash
+./plenary mcp-serve
+```
+
+Repo-local MCP config for Claude Code is in `.mcp.json` (uses `./plenary mcp-serve` and repo-local `.plenary/events.jsonl`).
 
 ## Multi-Agent Coordination Rules
 
@@ -169,9 +181,9 @@ Avoid count-threshold assumptions like `events > N`; they were brittle in practi
 - Commit only your intended files
 - Do not sweep in local runtime state unless it is part of the dogfood sync turn
 - Be careful with these common local-noise files:
-  - `/Users/keetonmartin/code/plenary/plenary` (local binary)
-  - `/Users/keetonmartin/code/plenary/cmd/plenary/web/dist/*` (frontend build artifacts)
-  - `/Users/keetonmartin/code/plenary/.plenary/events.jsonl` (dogfood state; commit only when intentionally syncing protocol actions)
+  - `plenary` (local binary)
+  - `cmd/plenary/web/dist/*` (frontend build artifacts)
+  - `.plenary/events.jsonl` (dogfood state; commit only when intentionally syncing protocol actions)
 
 ## Ownership And Status (source of truth)
 
