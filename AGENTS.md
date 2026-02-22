@@ -173,11 +173,16 @@ Avoid count-threshold assumptions like `events > N`; they were brittle in practi
   - `/Users/keetonmartin/code/plenary/cmd/plenary/web/dist/*` (frontend build artifacts)
   - `/Users/keetonmartin/code/plenary/.plenary/events.jsonl` (dogfood state; commit only when intentionally syncing protocol actions)
 
-## Current Roadmap Ownership (summary)
+## Ownership And Status (source of truth)
 
-See `WORKPLAN.md` for exact status. As of current dogfood decisions:
-- Claude: HTTP API sidecar + SSE (`plenary serve`)
-- Codex: discovery/ergonomics and later MCP server (after API contract stabilizes)
+Do not treat this file as the source of truth for product area ownership, task assignment, or roadmap status.
+
+Ownership and status are intentionally volatile and should live in:
+- `WORKPLAN.md` (implementation coordination and active ownership)
+- GitHub issues/projects/milestones (backlog and tracking)
+- Plenary decisions and dogfood notes (`DOGFOOD.md` + event log) for rationale
+
+`AGENTS.md` should stay stable and focus on durable operating guidance (build/test workflow, coordination rules, and dogfooding practices).
 
 ## When To Open A New Plenary
 
