@@ -197,6 +197,47 @@ func TestServeValidationErrors(t *testing.T) {
 	}
 }
 
+func TestServeListIncludesLastEventAtAndSortsNewestFirst(t *testing.T) {
+	binary := buildBinary(t)
+	tmpDir := t.TempDir()
+	storePath := tmpDir + "/events.jsonl"
+	port := "18925"
+
+	cmd := startServer(t, binary, storePath, port)
+	defer cmd.Process.Kill()
+
+	baseURL := fmt.Sprintf("http://localhost:%s", port)
+	actor := map[string]string{"actor_id": "agent-1", "actor_type": "agent"}
+
+	createA := apiPost(t, baseURL+"/api/plenaries", map[string]any{
+		"actor": actor, "topic": "A", "decision_rule": "unanimity",
+	})
+	pidA := createA["plenary_id"].(string)
+
+	createB := apiPost(t, baseURL+"/api/plenaries", map[string]any{
+		"actor": actor, "topic": "B", "decision_rule": "unanimity",
+	})
+	pidB := createB["plenary_id"].(string)
+
+	listResp := apiGetArray(t, baseURL+"/api/plenaries")
+	if len(listResp) < 2 {
+		t.Fatalf("expected at least 2 plenaries, got %d", len(listResp))
+	}
+
+	first := listResp[0].(map[string]any)
+	second := listResp[1].(map[string]any)
+
+	if first["plenary_id"] != pidB || second["plenary_id"] != pidA {
+		t.Fatalf("expected newest-first deterministic order [%s, %s], got [%v, %v]", pidB, pidA, first["plenary_id"], second["plenary_id"])
+	}
+	if first["last_event_at"] == nil || first["last_event_at"] == "" {
+		t.Fatal("expected last_event_at in list summary")
+	}
+	if second["last_event_at"] == nil || second["last_event_at"] == "" {
+		t.Fatal("expected last_event_at in list summary")
+	}
+}
+
 // --- helpers ---
 
 func assertEqual(t *testing.T, got, want any) {

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os/exec"
 	"runtime"
+	"sort"
 	"strings"
 
 	plenary "github.com/keetonmartin/plenary/internal/plenary"
@@ -44,12 +45,13 @@ func cmdWeb(store *plenary.JSONLStore, args []string) error {
 		}
 
 		type plenarySummary struct {
-			PlenaryID string `json:"plenary_id"`
-			Topic     string `json:"topic"`
-			Phase     string `json:"phase"`
-			Rule      string `json:"decision_rule"`
-			Closed    bool   `json:"closed"`
-			Events    int    `json:"event_count"`
+			PlenaryID   string `json:"plenary_id"`
+			Topic       string `json:"topic"`
+			Phase       string `json:"phase"`
+			Rule        string `json:"decision_rule"`
+			Closed      bool   `json:"closed"`
+			Events      int    `json:"event_count"`
+			LastEventAt string `json:"last_event_at,omitempty"`
 		}
 
 		summaries := make([]plenarySummary, 0, len(grouped))
@@ -58,15 +60,30 @@ func cmdWeb(store *plenary.JSONLStore, args []string) error {
 			if err != nil {
 				continue
 			}
+			lastEventAt := ""
+			if n := len(evts); n > 0 {
+				lastEventAt = evts[n-1].TS
+			}
 			summaries = append(summaries, plenarySummary{
-				PlenaryID: pid,
-				Topic:     snap.Topic,
-				Phase:     string(snap.Phase),
-				Rule:      string(snap.DecisionRule),
-				Closed:    snap.Closed,
-				Events:    snap.EventCount,
+				PlenaryID:   pid,
+				Topic:       snap.Topic,
+				Phase:       string(snap.Phase),
+				Rule:        string(snap.DecisionRule),
+				Closed:      snap.Closed,
+				Events:      snap.EventCount,
+				LastEventAt: lastEventAt,
 			})
 		}
+
+		sort.Slice(summaries, func(i, j int) bool {
+			if summaries[i].Closed != summaries[j].Closed {
+				return !summaries[i].Closed
+			}
+			if summaries[i].LastEventAt != summaries[j].LastEventAt {
+				return summaries[i].LastEventAt > summaries[j].LastEventAt
+			}
+			return summaries[i].PlenaryID < summaries[j].PlenaryID
+		})
 
 		json.NewEncoder(w).Encode(summaries)
 	})

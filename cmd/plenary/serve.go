@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"sync"
 	"time"
 
@@ -94,12 +95,13 @@ func cmdServe(store *plenary.JSONLStore, args []string) error {
 			grouped[evt.PlenaryID] = append(grouped[evt.PlenaryID], evt)
 		}
 		type summary struct {
-			PlenaryID string `json:"plenary_id"`
-			Topic     string `json:"topic"`
-			Phase     string `json:"phase"`
-			Rule      string `json:"decision_rule"`
-			Closed    bool   `json:"closed"`
-			Events    int    `json:"event_count"`
+			PlenaryID   string `json:"plenary_id"`
+			Topic       string `json:"topic"`
+			Phase       string `json:"phase"`
+			Rule        string `json:"decision_rule"`
+			Closed      bool   `json:"closed"`
+			Events      int    `json:"event_count"`
+			LastEventAt string `json:"last_event_at,omitempty"`
 		}
 		summaries := make([]summary, 0, len(grouped))
 		for pid, evts := range grouped {
@@ -107,15 +109,29 @@ func cmdServe(store *plenary.JSONLStore, args []string) error {
 			if err != nil {
 				continue
 			}
+			lastEventAt := ""
+			if n := len(evts); n > 0 {
+				lastEventAt = evts[n-1].TS
+			}
 			summaries = append(summaries, summary{
-				PlenaryID: pid,
-				Topic:     snap.Topic,
-				Phase:     string(snap.Phase),
-				Rule:      string(snap.DecisionRule),
-				Closed:    snap.Closed,
-				Events:    snap.EventCount,
+				PlenaryID:   pid,
+				Topic:       snap.Topic,
+				Phase:       string(snap.Phase),
+				Rule:        string(snap.DecisionRule),
+				Closed:      snap.Closed,
+				Events:      snap.EventCount,
+				LastEventAt: lastEventAt,
 			})
 		}
+		sort.Slice(summaries, func(i, j int) bool {
+			if summaries[i].Closed != summaries[j].Closed {
+				return !summaries[i].Closed
+			}
+			if summaries[i].LastEventAt != summaries[j].LastEventAt {
+				return summaries[i].LastEventAt > summaries[j].LastEventAt
+			}
+			return summaries[i].PlenaryID < summaries[j].PlenaryID
+		})
 		jsonResponse(w, summaries)
 	})
 
@@ -614,4 +630,3 @@ func handlePlenaryError(w http.ResponseWriter, err error) {
 		jsonError(w, msg, 500)
 	}
 }
-
