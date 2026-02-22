@@ -2,6 +2,8 @@
 
 The HTTP API is served by `plenary serve` and provides full access to all plenary operations plus real-time event streaming via SSE.
 
+For a runnable end-to-end example using two actors over HTTP, see `scripts/http_cross_agent_smoke.sh`.
+
 ## Quick Start
 
 ```bash
