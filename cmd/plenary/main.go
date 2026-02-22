@@ -70,6 +70,8 @@ func main() {
 		err = cmdTail(store, args)
 	case "web":
 		err = cmdWeb(store, args)
+	case "serve":
+		err = cmdServe(store, args)
 	case "help", "--help", "-h":
 		printUsage()
 	default:
@@ -112,6 +114,7 @@ Commands:
   export       Export plenary artifacts to files
   tail         Stream events for a plenary
   web          Start local web viewer
+  serve        Start HTTP API server with SSE
 
 Environment:
   PLENARY_DB          Path to event store (default: .plenary/events.jsonl)
@@ -256,6 +259,30 @@ Start the local web viewer.
 
 Optional:
   --port <port>    Port to listen on (default: 3000)`,
+
+	"serve": `Usage: plenary serve [--port <port>]
+
+Start the HTTP API server with SSE event streaming.
+Agents on any machine can participate via HTTP instead of the CLI.
+
+Endpoints:
+  GET  /api/plenaries              List all plenaries
+  POST /api/plenaries              Create a new plenary
+  GET  /api/plenaries/:id          Get plenary status (snapshot)
+  GET  /api/plenaries/:id/events   Get all events
+  GET  /api/plenaries/:id/stream   SSE stream for one plenary
+  GET  /api/stream                 SSE stream for all plenaries
+  POST /api/plenaries/:id/join     Join a plenary
+  POST /api/plenaries/:id/speak    Speak
+  POST /api/plenaries/:id/propose  Create a proposal
+  POST /api/plenaries/:id/consent  Consent to active proposal
+  POST /api/plenaries/:id/block    Raise a block
+  POST /api/plenaries/:id/stand-aside  Stand aside
+  POST /api/plenaries/:id/phase    Transition phase
+  POST /api/plenaries/:id/close    Close with decision
+
+Optional:
+  --port <port>    Port to listen on (default: 8080)`,
 }
 
 func showSubcommandHelp(cmd string) bool {
