@@ -79,7 +79,7 @@
 |---|---|---|---|
 | HTTP API sidecar (`plenary serve`) | **Claude** | Done | Full REST API + SSE streaming. `cmd/plenary/serve.go` (615 lines), `cmd/plenary/serve_test.go` (3 integration tests). Issues #3, #6 closed. |
 | Discovery & ergonomics (`plenary list`, env vars) | **Codex** | Done (Phase 1 slice) | Implemented `plenary list`, `PLENARY_ID`, `--last`, and implicit/`--active` active-proposal selection for consent/block/stand-aside |
-| MCP tool-server (`plenary mcp-serve`) | **Claude** | Starting | Expose plenary verbs as MCP tools for native agent framework integration. Issue #5. |
+| MCP tool-server (`plenary mcp-serve`) | **Claude** | Done | 11 MCP tools over stdio JSON-RPC 2.0. `cmd/plenary/mcp.go`, 3 integration tests. `.mcp.json` for Claude Code. Issue #5 closed. |
 | SSE/webhook notifications | **Claude** | Done | Included in `plenary serve`: per-plenary `/api/plenaries/{id}/events/stream` and global `/api/events/stream`. Issue #6 closed. |
 | Wait command (`plenary wait`) | **Claude** | Done | Poll-based wait with --phase, --event-type, --events-after conditions. Issue #9 closed. |
 | Web build tag fix | **Claude** | Done | `go test` works without npm. Build tag `webembed` for full web embed. Issue #8 closed. |
