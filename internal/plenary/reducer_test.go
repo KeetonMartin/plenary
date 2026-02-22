@@ -337,33 +337,220 @@ func TestReduceCannotActAfterClose(t *testing.T) {
 	}
 }
 
+func plenaryCreatedWithOpts(pid, actorID string, rule DecisionRule, deadline *string, quorumThreshold *int) Event {
+	return makeEvent(pid, actorID, "human", "plenary.created", PlenaryCreatedPayload{
+		Topic:           "Test topic",
+		Context:         "Test context",
+		DecisionRule:    rule,
+		Deadline:        deadline,
+		QuorumThreshold: quorumThreshold,
+	})
+}
+
 func TestReduceQuorumRule(t *testing.T) {
 	pid := "p1"
 	propID := "prop1"
 
-	events := []Event{
-		plenaryCreated(pid, "keeton", RuleQuorum),
-		participantJoined(pid, "claude", "agent"),
-		participantJoined(pid, "codex", "agent"),
-		participantJoined(pid, "keeton", "human"),
-		phaseSet(pid, "keeton", PhaseFraming, PhaseDivergence),
-		phaseSet(pid, "keeton", PhaseDivergence, PhaseProposal),
-		proposalCreated(pid, "claude", propID, "Use Go"),
-		phaseSet(pid, "keeton", PhaseProposal, PhaseConsensusCheck),
-		// Only claude consents, others undeclared
-		consentGiven(pid, "claude", propID),
-	}
+	t.Run("default threshold 50%: 1/3 consents not enough", func(t *testing.T) {
+		events := []Event{
+			plenaryCreated(pid, "keeton", RuleQuorum),
+			participantJoined(pid, "claude", "agent"),
+			participantJoined(pid, "codex", "agent"),
+			participantJoined(pid, "keeton", "human"),
+			phaseSet(pid, "keeton", PhaseFraming, PhaseDivergence),
+			phaseSet(pid, "keeton", PhaseDivergence, PhaseProposal),
+			proposalCreated(pid, "claude", propID, "Use Go"),
+			phaseSet(pid, "keeton", PhaseProposal, PhaseConsensusCheck),
+			consentGiven(pid, "claude", propID),
+		}
+		snap, err := Reduce(events)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if snap.ReadyToClose {
+			t.Error("expected not ready: 1/3 (33%) < 50% threshold")
+		}
+	})
 
-	snap, err := Reduce(events)
-	if err != nil {
-		t.Fatal(err)
-	}
+	t.Run("default threshold 50%: 2/3 consents enough", func(t *testing.T) {
+		events := []Event{
+			plenaryCreated(pid, "keeton", RuleQuorum),
+			participantJoined(pid, "claude", "agent"),
+			participantJoined(pid, "codex", "agent"),
+			participantJoined(pid, "keeton", "human"),
+			phaseSet(pid, "keeton", PhaseFraming, PhaseDivergence),
+			phaseSet(pid, "keeton", PhaseDivergence, PhaseProposal),
+			proposalCreated(pid, "claude", propID, "Use Go"),
+			phaseSet(pid, "keeton", PhaseProposal, PhaseConsensusCheck),
+			consentGiven(pid, "claude", propID),
+			consentGiven(pid, "codex", propID),
+		}
+		snap, err := Reduce(events)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !snap.ReadyToClose {
+			t.Error("expected ready: 2/3 (67%) >= 50% threshold")
+		}
+	})
 
-	// Quorum: should NOT be ready because there are still undeclared participants
-	// (the current implementation returns true if consents > 0 for quorum,
-	// but undeclared participants should probably prevent closure)
-	// This test documents current behavior — may need discussion.
-	t.Logf("Quorum with 1/3 consents, 2 undeclared: ready_to_close=%v", snap.ReadyToClose)
+	t.Run("custom threshold 75%: 2/3 not enough", func(t *testing.T) {
+		threshold := 75
+		events := []Event{
+			plenaryCreatedWithOpts(pid, "keeton", RuleQuorum, nil, &threshold),
+			participantJoined(pid, "claude", "agent"),
+			participantJoined(pid, "codex", "agent"),
+			participantJoined(pid, "keeton", "human"),
+			phaseSet(pid, "keeton", PhaseFraming, PhaseDivergence),
+			phaseSet(pid, "keeton", PhaseDivergence, PhaseProposal),
+			proposalCreated(pid, "claude", propID, "Use Go"),
+			phaseSet(pid, "keeton", PhaseProposal, PhaseConsensusCheck),
+			consentGiven(pid, "claude", propID),
+			consentGiven(pid, "codex", propID),
+		}
+		snap, err := Reduce(events)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if snap.ReadyToClose {
+			t.Error("expected not ready: 2/3 (67%) < 75% threshold")
+		}
+		if snap.QuorumThreshold == nil || *snap.QuorumThreshold != 75 {
+			t.Error("expected quorum_threshold=75 in snapshot")
+		}
+	})
+
+	t.Run("custom threshold 75%: 3/3 enough", func(t *testing.T) {
+		threshold := 75
+		events := []Event{
+			plenaryCreatedWithOpts(pid, "keeton", RuleQuorum, nil, &threshold),
+			participantJoined(pid, "claude", "agent"),
+			participantJoined(pid, "codex", "agent"),
+			participantJoined(pid, "keeton", "human"),
+			phaseSet(pid, "keeton", PhaseFraming, PhaseDivergence),
+			phaseSet(pid, "keeton", PhaseDivergence, PhaseProposal),
+			proposalCreated(pid, "claude", propID, "Use Go"),
+			phaseSet(pid, "keeton", PhaseProposal, PhaseConsensusCheck),
+			consentGiven(pid, "claude", propID),
+			consentGiven(pid, "codex", propID),
+			consentGiven(pid, "keeton", propID),
+		}
+		snap, err := Reduce(events)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !snap.ReadyToClose {
+			t.Error("expected ready: 3/3 (100%) >= 75% threshold")
+		}
+	})
+
+	t.Run("blocks prevent quorum closure", func(t *testing.T) {
+		events := []Event{
+			plenaryCreated(pid, "keeton", RuleQuorum),
+			participantJoined(pid, "claude", "agent"),
+			participantJoined(pid, "codex", "agent"),
+			phaseSet(pid, "keeton", PhaseFraming, PhaseDivergence),
+			phaseSet(pid, "keeton", PhaseDivergence, PhaseProposal),
+			proposalCreated(pid, "claude", propID, "Use Go"),
+			phaseSet(pid, "keeton", PhaseProposal, PhaseConsensusCheck),
+			consentGiven(pid, "claude", propID),
+			blockRaised(pid, "codex", propID, "No"),
+		}
+		snap, err := Reduce(events)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if snap.ReadyToClose {
+			t.Error("expected not ready: blocks prevent closure even under quorum")
+		}
+	})
+}
+
+func TestReduceTimeboxedRule(t *testing.T) {
+	pid := "p1"
+	propID := "prop1"
+
+	t.Run("before deadline: behaves like unanimity", func(t *testing.T) {
+		future := "2099-01-01T00:00:00Z"
+		events := []Event{
+			plenaryCreatedWithOpts(pid, "keeton", RuleTimeboxed, &future, nil),
+			participantJoined(pid, "claude", "agent"),
+			participantJoined(pid, "codex", "agent"),
+			phaseSet(pid, "keeton", PhaseFraming, PhaseDivergence),
+			phaseSet(pid, "keeton", PhaseDivergence, PhaseProposal),
+			proposalCreated(pid, "claude", propID, "Use Go"),
+			phaseSet(pid, "keeton", PhaseProposal, PhaseConsensusCheck),
+			consentGiven(pid, "claude", propID),
+		}
+		snap, err := Reduce(events)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if snap.ReadyToClose {
+			t.Error("expected not ready: before deadline, needs unanimity (codex undeclared)")
+		}
+	})
+
+	t.Run("before deadline: unanimity met", func(t *testing.T) {
+		future := "2099-01-01T00:00:00Z"
+		events := []Event{
+			plenaryCreatedWithOpts(pid, "keeton", RuleTimeboxed, &future, nil),
+			participantJoined(pid, "claude", "agent"),
+			participantJoined(pid, "codex", "agent"),
+			phaseSet(pid, "keeton", PhaseFraming, PhaseDivergence),
+			phaseSet(pid, "keeton", PhaseDivergence, PhaseProposal),
+			proposalCreated(pid, "claude", propID, "Use Go"),
+			phaseSet(pid, "keeton", PhaseProposal, PhaseConsensusCheck),
+			consentGiven(pid, "claude", propID),
+			consentGiven(pid, "codex", propID),
+		}
+		snap, err := Reduce(events)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !snap.ReadyToClose {
+			t.Error("expected ready: before deadline but all consented")
+		}
+	})
+
+	t.Run("after deadline: 1 consent enough", func(t *testing.T) {
+		past := "2020-01-01T00:00:00Z"
+		events := []Event{
+			plenaryCreatedWithOpts(pid, "keeton", RuleTimeboxed, &past, nil),
+			participantJoined(pid, "claude", "agent"),
+			participantJoined(pid, "codex", "agent"),
+			phaseSet(pid, "keeton", PhaseFraming, PhaseDivergence),
+			phaseSet(pid, "keeton", PhaseDivergence, PhaseProposal),
+			proposalCreated(pid, "claude", propID, "Use Go"),
+			phaseSet(pid, "keeton", PhaseProposal, PhaseConsensusCheck),
+			consentGiven(pid, "claude", propID),
+		}
+		snap, err := Reduce(events)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !snap.ReadyToClose {
+			t.Error("expected ready: after deadline, 1 consent is sufficient")
+		}
+	})
+
+	t.Run("validation: timeboxed requires deadline", func(t *testing.T) {
+		events := []Event{
+			plenaryCreated(pid, "keeton", RuleTimeboxed),
+		}
+		_, err := Reduce(events)
+		// The plenaryCreated helper doesn't set deadline, so validation should catch it
+		// Note: Reduce doesn't validate, so test via ReduceWithValidation
+		evt := makeEvent(pid, "keeton", "human", "plenary.created", PlenaryCreatedPayload{
+			Topic:        "Test",
+			DecisionRule: RuleTimeboxed,
+		})
+		err = ValidateEvent(Snapshot{}, evt, true)
+		if err == nil {
+			t.Error("expected validation error: timeboxed without deadline")
+		}
+		_ = events // suppress unused
+	})
 }
 
 func TestReduceProposalResetsStances(t *testing.T) {

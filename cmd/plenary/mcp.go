@@ -148,10 +148,11 @@ func mcpToolDefs() []toolDef {
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"topic":         map[string]any{"type": "string", "description": "Topic to deliberate on"},
-					"context":       map[string]any{"type": "string", "description": "Background context"},
-					"decision_rule": map[string]any{"type": "string", "enum": []string{"unanimity", "quorum", "timeboxed"}, "description": "Decision rule (default: unanimity)"},
-					"deadline":      map[string]any{"type": "string", "description": "ISO 8601 deadline"},
+					"topic":            map[string]any{"type": "string", "description": "Topic to deliberate on"},
+					"context":          map[string]any{"type": "string", "description": "Background context"},
+					"decision_rule":    map[string]any{"type": "string", "enum": []string{"unanimity", "quorum", "timeboxed"}, "description": "Decision rule (default: unanimity)"},
+					"deadline":         map[string]any{"type": "string", "description": "ISO 8601 deadline (required for timeboxed rule)"},
+					"quorum_threshold": map[string]any{"type": "integer", "description": "Quorum percentage 1-100 (default: 50, used with quorum rule)", "minimum": 1, "maximum": 100},
 				},
 				"required":             []string{"topic"},
 				"additionalProperties": false,
@@ -391,6 +392,12 @@ func mcpCreate(store *plenary.JSONLStore, actor plenary.Actor, args map[string]a
 	}
 	if dl := getString("deadline"); dl != "" {
 		payload["deadline"] = dl
+	}
+	if qt, ok := args["quorum_threshold"]; ok {
+		if v, ok := qt.(float64); ok && v >= 1 && v <= 100 {
+			threshold := int(v)
+			payload["quorum_threshold"] = threshold
+		}
 	}
 
 	plenaryID := plenary.NewUUIDLike()

@@ -612,7 +612,8 @@ func cmdCreate(store *plenary.JSONLStore, args []string) error {
 	if ruleStr == "" {
 		ruleStr, args = getFlag(args, "--rule")
 	}
-	deadline, _ := getFlag(args, "--deadline")
+	deadline, args := getFlag(args, "--deadline")
+	quorumStr, _ := getFlag(args, "--quorum-threshold")
 
 	rule := plenary.RuleUnanimity
 	if ruleStr != "" {
@@ -627,6 +628,17 @@ func cmdCreate(store *plenary.JSONLStore, args []string) error {
 	}
 	if deadline != "" {
 		payload.Deadline = &deadline
+	}
+	if quorumStr != "" {
+		q := 0
+		for _, c := range quorumStr {
+			if c >= '0' && c <= '9' {
+				q = q*10 + int(c-'0')
+			}
+		}
+		if q > 0 {
+			payload.QuorumThreshold = &q
+		}
 	}
 
 	evt, err := plenary.NewEvent(plenaryID, actor, "plenary.created", payload)

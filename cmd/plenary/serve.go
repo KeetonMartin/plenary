@@ -139,11 +139,12 @@ func cmdServe(store *plenary.JSONLStore, args []string) error {
 	mux.HandleFunc("POST /api/plenaries", func(w http.ResponseWriter, r *http.Request) {
 		corsHeaders(w)
 		var req struct {
-			Actor        plenary.Actor        `json:"actor"`
-			Topic        string               `json:"topic"`
-			Context      string               `json:"context,omitempty"`
-			DecisionRule plenary.DecisionRule  `json:"decision_rule"`
-			Deadline     *string              `json:"deadline,omitempty"`
+			Actor           plenary.Actor        `json:"actor"`
+			Topic           string               `json:"topic"`
+			Context         string               `json:"context,omitempty"`
+			DecisionRule    plenary.DecisionRule  `json:"decision_rule"`
+			Deadline        *string              `json:"deadline,omitempty"`
+			QuorumThreshold *int                 `json:"quorum_threshold,omitempty"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			jsonError(w, "invalid JSON: "+err.Error(), 400)
@@ -162,10 +163,11 @@ func cmdServe(store *plenary.JSONLStore, args []string) error {
 
 		plenaryID := plenary.NewUUIDLike()
 		payload := plenary.PlenaryCreatedPayload{
-			Topic:        req.Topic,
-			Context:      req.Context,
-			DecisionRule: req.DecisionRule,
-			Deadline:     req.Deadline,
+			Topic:           req.Topic,
+			Context:         req.Context,
+			DecisionRule:    req.DecisionRule,
+			Deadline:        req.Deadline,
+			QuorumThreshold: req.QuorumThreshold,
 		}
 		evt, err := plenary.NewEvent(plenaryID, req.Actor, "plenary.created", payload)
 		if err != nil {

@@ -92,10 +92,11 @@ func NewUUIDLike() string {
 }
 
 type PlenaryCreatedPayload struct {
-	Topic        string       `json:"topic"`
-	Context      string       `json:"context,omitempty"`
-	DecisionRule DecisionRule `json:"decision_rule"`
-	Deadline     *string      `json:"deadline,omitempty"`
+	Topic           string       `json:"topic"`
+	Context         string       `json:"context,omitempty"`
+	DecisionRule    DecisionRule `json:"decision_rule"`
+	Deadline        *string      `json:"deadline,omitempty"`
+	QuorumThreshold *int         `json:"quorum_threshold,omitempty"` // percentage 1-100, used with RuleQuorum
 }
 
 type ParticipantJoinedPayload struct {

@@ -5,7 +5,20 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"time"
 )
+
+// deadlineReached checks if a deadline string has passed. Exported for testing.
+func deadlineReached(deadline *string) bool {
+	if deadline == nil {
+		return false
+	}
+	t, err := time.Parse(time.RFC3339, *deadline)
+	if err != nil {
+		return false
+	}
+	return time.Now().After(t)
+}
 
 type ParticipantSnapshot struct {
 	ActorID     string  `json:"actor_id"`
@@ -39,6 +52,7 @@ type Snapshot struct {
 	Phase               Phase                 `json:"phase"`
 	DecisionRule        DecisionRule          `json:"decision_rule"`
 	Deadline            *string               `json:"deadline,omitempty"`
+	QuorumThreshold     *int                  `json:"quorum_threshold,omitempty"`
 	Participants        []ParticipantSnapshot `json:"participants"`
 	ActiveProposal      *ProposalSnapshot     `json:"active_proposal,omitempty"`
 	UnresolvedBlocks    []BlockSnapshot       `json:"unresolved_blocks"`
@@ -120,6 +134,12 @@ func ValidateEvent(snap Snapshot, evt Event, isFirst bool) error {
 		if p.Topic == "" {
 			return fmt.Errorf("%w: topic required", ErrValidation)
 		}
+		if p.DecisionRule == RuleTimeboxed && p.Deadline == nil {
+			return fmt.Errorf("%w: deadline required for timeboxed decision rule", ErrValidation)
+		}
+		if p.QuorumThreshold != nil && (*p.QuorumThreshold < 1 || *p.QuorumThreshold > 100) {
+			return fmt.Errorf("%w: quorum_threshold must be 1-100", ErrValidation)
+		}
 	case "participant.joined":
 		// always allowed before close
 	case "phase.set":
@@ -158,6 +178,7 @@ func ApplyEvent(state *reducerState, evt Event) error {
 			state.snapshot.DecisionRule = p.DecisionRule
 		}
 		state.snapshot.Deadline = p.Deadline
+		state.snapshot.QuorumThreshold = p.QuorumThreshold
 		state.snapshot.Phase = PhaseFraming
 	case "participant.joined":
 		var p ParticipantJoinedPayload
@@ -318,26 +339,45 @@ func computeReadyToClose(s Snapshot) bool {
 	if len(s.UnresolvedBlocks) > 0 {
 		return false
 	}
+
 	consents := 0
-	standAsides := 0
+	undeclared := 0
 	for _, p := range s.Participants {
 		switch p.Stance {
 		case StanceConsent:
 			consents++
 		case StanceStandAside:
-			standAsides++
+			// stand-asides don't block closure
 		default:
-			// undeclared or block — not ready
-			return false
+			undeclared++
 		}
 	}
+
+	total := len(s.Participants)
+
 	switch s.DecisionRule {
 	case RuleUnanimity:
-		// Quaker unanimity: all must declare, stand-asides are allowed,
-		// only blocks prevent consensus. At least one consent required.
-		return consents > 0 && (consents+standAsides) == len(s.Participants)
-	case RuleQuorum, RuleTimeboxed:
-		return consents > 0
+		// Quaker unanimity: all must declare (consent or stand-aside),
+		// no undeclared participants. At least one consent required.
+		return consents > 0 && undeclared == 0
+
+	case RuleQuorum:
+		// Quorum: consent percentage must meet threshold.
+		// Default threshold is 50% if not specified.
+		threshold := 50
+		if s.QuorumThreshold != nil {
+			threshold = *s.QuorumThreshold
+		}
+		return consents*100 >= threshold*total
+
+	case RuleTimeboxed:
+		// Timeboxed: if deadline has passed, ready with at least 1 consent.
+		// Before deadline, behaves like unanimity.
+		if deadlineReached(s.Deadline) {
+			return consents > 0
+		}
+		return consents > 0 && undeclared == 0
+
 	default:
 		return false
 	}
