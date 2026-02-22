@@ -25,7 +25,7 @@ Default port is `8080`, configurable via `--port`.
 
 ## Authentication
 
-None currently. All requests are unauthenticated. See issue #5 for future auth plans.
+None currently. All requests are unauthenticated. Auth/identity/hosted sync is deferred to a later phase.
 
 ## Common Patterns
 
