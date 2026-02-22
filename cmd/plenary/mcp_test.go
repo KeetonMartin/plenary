@@ -205,10 +205,18 @@ func TestMCPFullLifecycle(t *testing.T) {
 	closeResult := callTool("plenary_close", map[string]any{"plenary_id": plenaryID, "resolution": "MCP works", "outcome": "consensus"})
 	assertEqual(t, closeResult["status"], "closed")
 
-	// 9. Status
+	// 9. Status — verify closed state and decision_record
 	statusResult := callTool("plenary_status", map[string]any{"plenary_id": plenaryID})
 	assertEqual(t, statusResult["topic"], "MCP test plenary")
 	assertEqual(t, statusResult["closed"], true)
+
+	// Verify decision_record was properly constructed
+	dr := statusResult["decision_record"]
+	if dr == nil {
+		t.Fatal("expected decision_record in closed plenary status")
+	}
+	drMap := dr.(map[string]any)
+	assertEqual(t, drMap["resolution"], "MCP works")
 
 	// 10. List
 	listResp := mcpCall(t, stdin, scanner, id, "tools/call", map[string]any{

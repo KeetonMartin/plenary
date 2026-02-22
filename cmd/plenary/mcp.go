@@ -631,7 +631,35 @@ func mcpClose(store *plenary.JSONLStore, actor plenary.Actor, getString func(str
 		outcome = "consensus"
 	}
 
-	evt, err := plenary.NewEvent(pid, actor, "decision.closed", map[string]any{"outcome": outcome, "resolution": resolution})
+	// Build decision record from current state (matching serve.go behavior)
+	events, err := store.ListByPlenary(pid)
+	if err != nil {
+		return "store error: " + err.Error(), true
+	}
+	snap, err := plenary.Reduce(events)
+	if err != nil {
+		return err.Error(), true
+	}
+
+	participants := make([]plenary.DecisionRecordParticipant, len(snap.Participants))
+	for i, p := range snap.Participants {
+		participants[i] = plenary.DecisionRecordParticipant{
+			ActorID:     p.ActorID,
+			ActorType:   p.ActorType,
+			Role:        p.Role,
+			FinalStance: p.Stance,
+			FinalReason: p.FinalReason,
+		}
+	}
+
+	payload := plenary.DecisionClosedPayload{
+		Outcome: plenary.Outcome(outcome),
+		DecisionRecord: plenary.DecisionRecord{
+			Resolution:   resolution,
+			Participants: participants,
+		},
+	}
+	evt, err := plenary.NewEvent(pid, actor, "decision.closed", payload)
 	if err != nil {
 		return "event creation error: " + err.Error(), true
 	}
