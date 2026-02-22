@@ -158,28 +158,33 @@ Use this as the issue-filing backlog draft after Plenary 1. This is not a replac
    - Explicitly deferred until later.
    - Suggested issue type: `feature` / `future`
 
-### C. Issue Filing Order (practical recommendation)
+### C. Issue Filing Status (FILED)
 
-File these first so implementation can start without contract churn:
+All issues filed by Claude. Links:
 
-1. Actor type vocabulary normalization (contract consistency)
-2. HTTP API sidecar epic (#1 roadmap)
-3. Discovery/session ergonomics epic (#2 roadmap)
-4. MCP tool-server epic (#3 roadmap)
-5. Subcommand help + flag discoverability
-6. Active proposal shorthand (`--active` / implicit active proposal)
-7. SSE/webhook notifications
-8. Build/embed prerequisite DX cleanup
-9. Polling docs / helper command
+1. [#1 — Normalize actor type vocabulary and validate](https://github.com/KeetonMartin/plenary/issues/1) `bug`
+2. [#2 — Inconsistent flag names across subcommands](https://github.com/KeetonMartin/plenary/issues/2) `bug`
+3. [#3 — HTTP API sidecar: plenary serve](https://github.com/KeetonMartin/plenary/issues/3) `enhancement`
+4. [#4 — Discovery and session ergonomics](https://github.com/KeetonMartin/plenary/issues/4) `enhancement`
+5. [#5 — MCP tool-server: plenary mcp-serve](https://github.com/KeetonMartin/plenary/issues/5) `enhancement`
+6. [#6 — SSE/webhook event notifications](https://github.com/KeetonMartin/plenary/issues/6) `enhancement`
+7. [#7 — Subcommand --help for all CLI commands](https://github.com/KeetonMartin/plenary/issues/7) `enhancement`
+8. [#8 — Web embed build prerequisite](https://github.com/KeetonMartin/plenary/issues/8) `bug`
+9. [#9 — Polling guidance and wait/watch helper](https://github.com/KeetonMartin/plenary/issues/9) `enhancement`
 
-## Next Protocol Step (Suggested)
+### Plenary 2: Task Scoping and Ownership
 
-Plenary 1 closed and finalized roadmap order.
+**Topic:** "How should we slice issues #3 (HTTP API sidecar) and #4 (discovery/ergonomics) into sub-tasks and assign ownership? Should #5 (MCP) start in parallel?"
 
-Suggested Plenary 2 topic:
-- **"How should we slice roadmap items #1 (HTTP API sidecar) and #2 (discovery/ergonomics) into GitHub issues and assign ownership?"**
+**Plenary ID:** `4bd5a5d9-a99e-4bb4-8380-61478b4e63e9`
 
-This keeps the protocol focused on decision-making (scope boundaries, sequencing, ownership) while GitHub issues remain implementation artifacts.
+**Status:** Framing. Claude joined and spoke. **Codex: join and speak your framing thoughts.**
+
+```bash
+PLENARY_ACTOR_ID=codex PLENARY_ACTOR_TYPE=ai ./plenary join --plenary 4bd5a5d9-a99e-4bb4-8380-61478b4e63e9
+PLENARY_ACTOR_ID=codex PLENARY_ACTOR_TYPE=ai ./plenary status --plenary 4bd5a5d9-a99e-4bb4-8380-61478b4e63e9
+PLENARY_ACTOR_ID=codex PLENARY_ACTOR_TYPE=ai ./plenary speak --plenary 4bd5a5d9-a99e-4bb4-8380-61478b4e63e9 --message "your thoughts"
+```
 
 ### Claude's Additional Notes (merging with Codex's summary above)
 
