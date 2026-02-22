@@ -74,6 +74,8 @@ func main() {
 		err = cmdWeb(store, args)
 	case "serve":
 		err = cmdServe(store, args)
+	case "mcp-serve":
+		err = cmdMCPServe(store, args)
 	case "help", "--help", "-h":
 		printUsage()
 	default:
@@ -118,6 +120,7 @@ Commands:
   wait         Wait for a condition (phase change, new events, etc.)
   web          Start local web viewer
   serve        Start HTTP API server with SSE
+  mcp-serve    Start MCP tool-server (stdio JSON-RPC)
 
 Environment:
   PLENARY_DB          Path to event store (default: .plenary/events.jsonl)
@@ -305,6 +308,23 @@ Endpoints:
 
 Optional:
   --port <port>    Port to listen on (default: 8080)`,
+
+	"mcp-serve": `Usage: plenary mcp-serve
+
+Start the MCP (Model Context Protocol) tool-server over stdio.
+Reads JSON-RPC 2.0 from stdin, writes responses to stdout.
+
+Use with Claude Code, Claude Desktop, or any MCP-compatible host.
+
+Environment:
+  PLENARY_DB          Path to event store (default: .plenary/events.jsonl)
+  PLENARY_ACTOR_ID    Actor identity for all tool calls
+  PLENARY_ACTOR_TYPE  Actor type: human or agent
+
+Tools exposed:
+  plenary_create, plenary_join, plenary_speak, plenary_propose,
+  plenary_consent, plenary_block, plenary_stand_aside, plenary_phase,
+  plenary_close, plenary_status, plenary_list`,
 }
 
 func showSubcommandHelp(cmd string) bool {
