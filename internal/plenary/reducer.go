@@ -8,13 +8,13 @@ import (
 )
 
 type ParticipantSnapshot struct {
-	ActorID      string  `json:"actor_id"`
-	ActorType    string  `json:"actor_type"`
-	Role         *string `json:"role,omitempty"`
-	Lens         *string `json:"lens,omitempty"`
-	Stance       Stance  `json:"stance"`
-	LastEventAt  string  `json:"last_event_at,omitempty"`
-	FinalReason  *string `json:"final_reason,omitempty"`
+	ActorID     string  `json:"actor_id"`
+	ActorType   string  `json:"actor_type"`
+	Role        *string `json:"role,omitempty"`
+	Lens        *string `json:"lens,omitempty"`
+	Stance      Stance  `json:"stance"`
+	LastEventAt string  `json:"last_event_at,omitempty"`
+	FinalReason *string `json:"final_reason,omitempty"`
 }
 
 type ProposalSnapshot struct {
@@ -24,31 +24,31 @@ type ProposalSnapshot struct {
 }
 
 type BlockSnapshot struct {
-	ActorID      string  `json:"actor_id"`
-	Text         string  `json:"text"`
-	ProposalID   string  `json:"proposal_id"`
-	Principle    *string `json:"principle,omitempty"`
-	FailureMode  *string `json:"failure_mode,omitempty"`
-	Status       string  `json:"status"`
+	ActorID     string  `json:"actor_id"`
+	Text        string  `json:"text"`
+	ProposalID  string  `json:"proposal_id"`
+	Principle   *string `json:"principle,omitempty"`
+	FailureMode *string `json:"failure_mode,omitempty"`
+	Status      string  `json:"status"`
 }
 
 type Snapshot struct {
-	PlenaryID            string                `json:"plenary_id"`
-	Topic                string                `json:"topic,omitempty"`
-	Context              string                `json:"context,omitempty"`
-	Phase                Phase                 `json:"phase"`
-	DecisionRule         DecisionRule          `json:"decision_rule"`
-	Deadline             *string               `json:"deadline,omitempty"`
-	Participants         []ParticipantSnapshot `json:"participants"`
-	ActiveProposal       *ProposalSnapshot     `json:"active_proposal,omitempty"`
-	UnresolvedBlocks     []BlockSnapshot       `json:"unresolved_blocks"`
-	OpenQuestions        []string              `json:"open_questions,omitempty"`
-	ReadyToClose         bool                  `json:"ready_to_close"`
-	NextRequiredActions  []string              `json:"next_required_actions"`
-	Closed               bool                  `json:"closed"`
-	Outcome              *Outcome              `json:"outcome,omitempty"`
-	DecisionRecord       *DecisionRecord       `json:"decision_record,omitempty"`
-	EventCount           int                   `json:"event_count"`
+	PlenaryID           string                `json:"plenary_id"`
+	Topic               string                `json:"topic,omitempty"`
+	Context             string                `json:"context,omitempty"`
+	Phase               Phase                 `json:"phase"`
+	DecisionRule        DecisionRule          `json:"decision_rule"`
+	Deadline            *string               `json:"deadline,omitempty"`
+	Participants        []ParticipantSnapshot `json:"participants"`
+	ActiveProposal      *ProposalSnapshot     `json:"active_proposal,omitempty"`
+	UnresolvedBlocks    []BlockSnapshot       `json:"unresolved_blocks"`
+	OpenQuestions       []string              `json:"open_questions,omitempty"`
+	ReadyToClose        bool                  `json:"ready_to_close"`
+	NextRequiredActions []string              `json:"next_required_actions"`
+	Closed              bool                  `json:"closed"`
+	Outcome             *Outcome              `json:"outcome,omitempty"`
+	DecisionRecord      *DecisionRecord       `json:"decision_record,omitempty"`
+	EventCount          int                   `json:"event_count"`
 }
 
 type reducerState struct {
@@ -93,6 +93,13 @@ func ReduceWithValidation(existing []Event, next Event) (Snapshot, error) {
 func ValidateEvent(snap Snapshot, evt Event, isFirst bool) error {
 	if evt.PlenaryID == "" || evt.EventType == "" || evt.Actor.ActorID == "" || evt.Actor.ActorType == "" {
 		return fmt.Errorf("%w: missing base event fields", ErrValidation)
+	}
+	switch evt.Actor.ActorType {
+	case "human", "agent", "ai":
+		// 'ai' accepted for backward compatibility with dogfood logs;
+		// CLI normalizes it to 'agent' for newly created events.
+	default:
+		return fmt.Errorf("%w: invalid actor_type %q", ErrValidation, evt.Actor.ActorType)
 	}
 	if isFirst && evt.EventType != "plenary.created" {
 		return fmt.Errorf("%w: first event must be plenary.created", ErrValidation)
@@ -416,4 +423,3 @@ func LatestDecisionRecord(events []Event) (*DecisionClosedPayload, error) {
 func Is(err, target error) bool {
 	return errors.Is(err, target)
 }
-

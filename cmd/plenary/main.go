@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -45,6 +46,8 @@ func main() {
 		err = cmdCreate(store, args)
 	case "join":
 		err = cmdJoin(store, args)
+	case "list":
+		err = cmdList(store, args)
 	case "status":
 		err = cmdStatus(store, args)
 	case "propose":
@@ -97,6 +100,7 @@ Usage: plenary <command> [flags]
 Commands:
   create       Create a new plenary
   join         Join an existing plenary
+  list         List plenaries in the store
   status       Show derived state of a plenary
   propose      Create a formal proposal
   consent      Consent to the active proposal
@@ -112,7 +116,8 @@ Commands:
 Environment:
   PLENARY_DB          Path to event store (default: .plenary/events.jsonl)
   PLENARY_ACTOR_ID    Your actor ID
-  PLENARY_ACTOR_TYPE  Your actor type (human|agent)
+  PLENARY_ACTOR_TYPE  Your actor type (human|agent); 'ai' accepted as alias
+  PLENARY_ID          Default plenary ID for commands that need one
 
 Run 'plenary <command> --help' for details on a specific command.`)
 }
@@ -305,7 +310,11 @@ func getActor() (plenary.Actor, error) {
 	if id == "" || typ == "" {
 		return plenary.Actor{}, fmt.Errorf("%w: set PLENARY_ACTOR_ID and PLENARY_ACTOR_TYPE env vars", plenary.ErrValidation)
 	}
-	return plenary.Actor{ActorID: id, ActorType: typ}, nil
+	norm, err := normalizeActorType(typ)
+	if err != nil {
+		return plenary.Actor{}, err
+	}
+	return plenary.Actor{ActorID: id, ActorType: norm}, nil
 }
 
 func printJSON(v any) error {
@@ -449,6 +458,74 @@ func printEventJSONLine(evt plenary.Event) error {
 	return nil
 }
 
+func normalizeActorType(typ string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(typ)) {
+	case "human":
+		return "human", nil
+	case "agent", "ai":
+		return "agent", nil
+	default:
+		return "", fmt.Errorf("%w: invalid actor type %q (allowed: human|agent; 'ai' is an alias)", plenary.ErrValidation, typ)
+	}
+}
+
+func latestPlenaryID(store *plenary.JSONLStore) (string, error) {
+	events, err := store.ListAll()
+	if err != nil {
+		return "", err
+	}
+	if len(events) == 0 {
+		return "", fmt.Errorf("%w: no plenaries found", plenary.ErrNotFound)
+	}
+	return events[len(events)-1].PlenaryID, nil
+}
+
+func resolvePlenaryID(store *plenary.JSONLStore, args []string) (string, []string, error) {
+	if id, rest := getFlag(args, "--plenary"); id != "" {
+		return id, rest, nil
+	}
+	if useLast, rest := hasFlag(args, "--last"); useLast {
+		id, err := latestPlenaryID(store)
+		return id, rest, err
+	}
+	if id := os.Getenv("PLENARY_ID"); id != "" {
+		return id, args, nil
+	}
+	return "", args, fmt.Errorf("%w: provide --plenary <id>, --last, or set PLENARY_ID", plenary.ErrValidation)
+}
+
+func getSnapshot(store *plenary.JSONLStore, plenaryID string) (plenary.Snapshot, []plenary.Event, error) {
+	events, err := store.ListByPlenary(plenaryID)
+	if err != nil {
+		return plenary.Snapshot{}, nil, err
+	}
+	if len(events) == 0 {
+		return plenary.Snapshot{}, nil, fmt.Errorf("%w: plenary %s not found", plenary.ErrNotFound, plenaryID)
+	}
+	snap, err := plenary.Reduce(events)
+	if err != nil {
+		return plenary.Snapshot{}, nil, err
+	}
+	return snap, events, nil
+}
+
+func resolveProposalID(store *plenary.JSONLStore, plenaryID string, args []string) (string, []string, error) {
+	if id, rest := getFlag(args, "--proposal"); id != "" {
+		return id, rest, nil
+	} else {
+		args = rest
+	}
+	_, args = hasFlag(args, "--active")
+	snap, _, err := getSnapshot(store, plenaryID)
+	if err != nil {
+		return "", args, err
+	}
+	if snap.ActiveProposal == nil {
+		return "", args, fmt.Errorf("%w: no active proposal (pass --proposal <id>)", plenary.ErrConflict)
+	}
+	return snap.ActiveProposal.ProposalID, args, nil
+}
+
 // --- Commands ---
 
 func cmdCreate(store *plenary.JSONLStore, args []string) error {
@@ -504,7 +581,7 @@ func cmdJoin(store *plenary.JSONLStore, args []string) error {
 		return err
 	}
 
-	plenaryID, args, err := requireFlag(args, "--plenary")
+	plenaryID, args, err := resolvePlenaryID(store, args)
 	if err != nil {
 		return err
 	}
@@ -535,21 +612,68 @@ func cmdJoin(store *plenary.JSONLStore, args []string) error {
 	})
 }
 
-func cmdStatus(store *plenary.JSONLStore, args []string) error {
-	plenaryID, _, err := requireFlag(args, "--plenary")
-	if err != nil {
-		return err
+func cmdList(store *plenary.JSONLStore, args []string) error {
+	if len(args) > 0 {
+		return fmt.Errorf("%w: list takes no flags", plenary.ErrValidation)
 	}
-
-	events, err := store.ListByPlenary(plenaryID)
+	events, err := store.ListAll()
 	if err != nil {
 		return err
 	}
 	if len(events) == 0 {
-		return fmt.Errorf("%w: plenary %s not found", plenary.ErrNotFound, plenaryID)
+		return printJSON([]any{})
 	}
 
-	snap, err := plenary.Reduce(events)
+	grouped := map[string][]plenary.Event{}
+	lastTS := map[string]string{}
+	for _, evt := range events {
+		grouped[evt.PlenaryID] = append(grouped[evt.PlenaryID], evt)
+		lastTS[evt.PlenaryID] = evt.TS
+	}
+
+	type listItem struct {
+		PlenaryID    string  `json:"plenary_id"`
+		Topic        string  `json:"topic,omitempty"`
+		Phase        string  `json:"phase"`
+		DecisionRule string  `json:"decision_rule"`
+		Closed       bool    `json:"closed"`
+		EventCount   int     `json:"event_count"`
+		LastEventAt  string  `json:"last_event_at"`
+		Outcome      *string `json:"outcome,omitempty"`
+	}
+	out := make([]listItem, 0, len(grouped))
+	for pid, evts := range grouped {
+		snap, err := plenary.Reduce(evts)
+		if err != nil {
+			continue
+		}
+		var outcome *string
+		if snap.Outcome != nil {
+			v := string(*snap.Outcome)
+			outcome = &v
+		}
+		out = append(out, listItem{
+			PlenaryID:    pid,
+			Topic:        snap.Topic,
+			Phase:        string(snap.Phase),
+			DecisionRule: string(snap.DecisionRule),
+			Closed:       snap.Closed,
+			EventCount:   snap.EventCount,
+			LastEventAt:  lastTS[pid],
+			Outcome:      outcome,
+		})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].LastEventAt > out[j].LastEventAt })
+	return printJSON(out)
+}
+
+func cmdStatus(store *plenary.JSONLStore, args []string) error {
+	plenaryID, _, err := resolvePlenaryID(store, args)
+	if err != nil {
+		return err
+	}
+
+	snap, _, err := getSnapshot(store, plenaryID)
 	if err != nil {
 		return err
 	}
@@ -604,11 +728,11 @@ func cmdConsent(store *plenary.JSONLStore, args []string) error {
 		return err
 	}
 
-	plenaryID, args, err := requireFlag(args, "--plenary")
+	plenaryID, args, err := resolvePlenaryID(store, args)
 	if err != nil {
 		return err
 	}
-	proposalID, args, err := requireFlag(args, "--proposal")
+	proposalID, args, err := resolveProposalID(store, plenaryID, args)
 	if err != nil {
 		return err
 	}
@@ -643,11 +767,11 @@ func cmdBlock(store *plenary.JSONLStore, args []string) error {
 		return err
 	}
 
-	plenaryID, args, err := requireFlag(args, "--plenary")
+	plenaryID, args, err := resolvePlenaryID(store, args)
 	if err != nil {
 		return err
 	}
-	proposalID, args, err := requireFlag(args, "--proposal")
+	proposalID, args, err := resolveProposalID(store, plenaryID, args)
 	if err != nil {
 		return err
 	}
@@ -691,11 +815,11 @@ func cmdStandAside(store *plenary.JSONLStore, args []string) error {
 		return err
 	}
 
-	plenaryID, args, err := requireFlag(args, "--plenary")
+	plenaryID, args, err := resolvePlenaryID(store, args)
 	if err != nil {
 		return err
 	}
-	proposalID, args, err := requireFlag(args, "--proposal")
+	proposalID, args, err := resolveProposalID(store, plenaryID, args)
 	if err != nil {
 		return err
 	}
@@ -731,7 +855,7 @@ func cmdSpeak(store *plenary.JSONLStore, args []string) error {
 		return err
 	}
 
-	plenaryID, args, err := requireFlag(args, "--plenary")
+	plenaryID, args, err := resolvePlenaryID(store, args)
 	if err != nil {
 		return err
 	}
@@ -769,7 +893,7 @@ func cmdPhase(store *plenary.JSONLStore, args []string) error {
 		return err
 	}
 
-	plenaryID, args, err := requireFlag(args, "--plenary")
+	plenaryID, args, err := resolvePlenaryID(store, args)
 	if err != nil {
 		return err
 	}
@@ -809,7 +933,7 @@ func cmdClose(store *plenary.JSONLStore, args []string) error {
 		return err
 	}
 
-	plenaryID, args, err := requireFlag(args, "--plenary")
+	plenaryID, args, err := resolvePlenaryID(store, args)
 	if err != nil {
 		return err
 	}
@@ -825,11 +949,7 @@ func cmdClose(store *plenary.JSONLStore, args []string) error {
 	}
 
 	// Build decision record from current state
-	events, err := store.ListByPlenary(plenaryID)
-	if err != nil {
-		return err
-	}
-	snap, err := plenary.Reduce(events)
+	snap, _, err := getSnapshot(store, plenaryID)
 	if err != nil {
 		return err
 	}
@@ -870,7 +990,7 @@ func cmdClose(store *plenary.JSONLStore, args []string) error {
 }
 
 func cmdExport(store *plenary.JSONLStore, args []string) error {
-	plenaryID, args, err := requireFlag(args, "--plenary")
+	plenaryID, args, err := resolvePlenaryID(store, args)
 	if err != nil {
 		return err
 	}
@@ -879,14 +999,7 @@ func cmdExport(store *plenary.JSONLStore, args []string) error {
 		outDir = filepath.Join(".plenary", "exports", plenaryID)
 	}
 
-	events, err := store.ListByPlenary(plenaryID)
-	if err != nil {
-		return err
-	}
-	if len(events) == 0 {
-		return fmt.Errorf("%w: plenary %s not found", plenary.ErrNotFound, plenaryID)
-	}
-	snap, err := plenary.Reduce(events)
+	snap, events, err := getSnapshot(store, plenaryID)
 	if err != nil {
 		return err
 	}
@@ -937,7 +1050,7 @@ func cmdExport(store *plenary.JSONLStore, args []string) error {
 }
 
 func cmdTail(store *plenary.JSONLStore, args []string) error {
-	plenaryID, args, err := requireFlag(args, "--plenary")
+	plenaryID, args, err := resolvePlenaryID(store, args)
 	if err != nil {
 		return err
 	}

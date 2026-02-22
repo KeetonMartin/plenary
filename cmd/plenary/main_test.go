@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -223,5 +224,135 @@ func TestCLIExport(t *testing.T) {
 		if _, err := os.Stat(path); os.IsNotExist(err) {
 			t.Errorf("expected %s to exist", path)
 		}
+	}
+}
+
+func TestCLIListAndLastAndActiveProposalShorthand(t *testing.T) {
+	bin := buildBinary(t)
+	store := filepath.Join(t.TempDir(), "events.jsonl")
+
+	// Create two plenaries so --last and list ordering have meaning.
+	p1 := run(t, bin, store, "alice", "human", "create", "--topic", "First")["plenary_id"]
+	if p1 == "" {
+		t.Fatal("missing plenary_id for p1")
+	}
+	p2 := run(t, bin, store, "bob", "agent", "create", "--topic", "Second")["plenary_id"]
+	if p2 == "" {
+		t.Fatal("missing plenary_id for p2")
+	}
+
+	// list should include both plenaries and newest first (p2).
+	cmd := exec.Command(bin, "list")
+	cmd.Env = append(os.Environ(), "PLENARY_DB="+store)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("list failed: %v\n%s", err, out)
+	}
+	var list []map[string]any
+	if err := json.Unmarshal(out, &list); err != nil {
+		t.Fatalf("list parse failed: %v\n%s", err, out)
+	}
+	if len(list) < 2 {
+		t.Fatalf("expected at least 2 plenaries in list, got %d", len(list))
+	}
+	if list[0]["plenary_id"] != p2 {
+		t.Fatalf("expected most recent plenary first (%s), got %v", p2, list[0]["plenary_id"])
+	}
+
+	// Build a proposal in p2 and use PLENARY_ID + implicit active proposal for consent.
+	run(t, bin, store, "claude", "agent", "join", "--plenary", p2)
+	run(t, bin, store, "keeton", "human", "phase", "--plenary", p2, "--from", "framing", "--to", "divergence")
+	run(t, bin, store, "keeton", "human", "phase", "--plenary", p2, "--from", "divergence", "--to", "proposal")
+	run(t, bin, store, "claude", "agent", "propose", "--plenary", p2, "--text", "Proposal X")
+	run(t, bin, store, "keeton", "human", "phase", "--plenary", p2, "--from", "proposal", "--to", "consensus_check")
+
+	consent := exec.Command(bin, "consent", "--reason", "works")
+	consent.Env = append(os.Environ(),
+		"PLENARY_DB="+store,
+		"PLENARY_ACTOR_ID=codex",
+		"PLENARY_ACTOR_TYPE=agent",
+		"PLENARY_ID="+p2,
+	)
+	out, err = consent.CombinedOutput()
+	if err != nil {
+		t.Fatalf("consent with PLENARY_ID + implicit active proposal failed: %v\n%s", err, out)
+	}
+
+	// status --last should resolve to p2 and show codex consent.
+	statusCmd := exec.Command(bin, "status", "--last")
+	statusCmd.Env = append(os.Environ(), "PLENARY_DB="+store)
+	out, err = statusCmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("status --last failed: %v\n%s", err, out)
+	}
+	var status map[string]any
+	if err := json.Unmarshal(out, &status); err != nil {
+		t.Fatalf("status --last parse failed: %v\n%s", err, out)
+	}
+	if status["plenary_id"] != p2 {
+		t.Fatalf("status --last expected plenary %s, got %v", p2, status["plenary_id"])
+	}
+}
+
+func TestCLIActorTypeNormalizationAndValidation(t *testing.T) {
+	bin := buildBinary(t)
+	store := filepath.Join(t.TempDir(), "events.jsonl")
+
+	// 'ai' should be accepted and normalized to 'agent'
+	pid := run(t, bin, store, "keeton", "human", "create", "--topic", "Actor type")["plenary_id"]
+	run(t, bin, store, "codex", "ai", "join", "--plenary", pid)
+	status := runStatus(t, bin, store, pid)
+	participants, ok := status["participants"].([]any)
+	if !ok {
+		t.Fatalf("participants missing or wrong type: %T", status["participants"])
+	}
+	found := false
+	for _, raw := range participants {
+		p, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		if p["actor_id"] == "codex" {
+			found = true
+			if p["actor_type"] != "agent" {
+				t.Fatalf("expected actor_type normalized to agent, got %v", p["actor_type"])
+			}
+		}
+	}
+	if !found {
+		t.Fatal("expected codex participant")
+	}
+
+	// Invalid actor type should fail with validation exit code.
+	cmd := exec.Command(bin, "join", "--plenary", pid)
+	cmd.Env = append(os.Environ(),
+		"PLENARY_DB="+store,
+		"PLENARY_ACTOR_ID=bad",
+		"PLENARY_ACTOR_TYPE=robot",
+	)
+	err := cmd.Run()
+	if err == nil {
+		t.Fatal("expected invalid actor type to fail")
+	}
+	if ee, ok := err.(*exec.ExitError); ok && ee.ExitCode() != 2 {
+		t.Fatalf("expected exit 2 for invalid actor type, got %d", ee.ExitCode())
+	}
+}
+
+func TestCLIStatusWithoutPlenaryIDFails(t *testing.T) {
+	bin := buildBinary(t)
+	store := filepath.Join(t.TempDir(), "events.jsonl")
+
+	cmd := exec.Command(bin, "status")
+	cmd.Env = append(os.Environ(), "PLENARY_DB="+store)
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatal("expected status without plenary ID to fail")
+	}
+	if ee, ok := err.(*exec.ExitError); ok && ee.ExitCode() != 2 {
+		t.Fatalf("expected exit 2, got %d", ee.ExitCode())
+	}
+	if !strings.Contains(string(out), "PLENARY_ID") && !strings.Contains(string(out), "--last") {
+		t.Fatalf("expected error message to mention PLENARY_ID/--last, got: %s", out)
 	}
 }
