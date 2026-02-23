@@ -143,6 +143,16 @@ You can also point it at a different server with `BASE=http://host:port make smo
 
 Full API reference: `API.md`
 
+## Templates (Docs-First)
+
+Common deliberation templates live in `/templates`:
+- roadmap prioritization
+- architecture decision record (ADR)
+- two-agent ownership split
+- retrospective
+
+See `templates/README.md` for usage.
+
 ## MCP (Agent-Native) Setup
 
 Plenary also runs as an MCP tool server over stdio:
