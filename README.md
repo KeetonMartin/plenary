@@ -176,3 +176,7 @@ MCP dogfood flow (both agents):
 2. Configure each agent's MCP server using the matching template values
 3. Create/join the same plenary via MCP tools (`plenary_create`, `plenary_join`, `plenary_speak`, etc.)
 4. Record friction/bugs in `DOGFOOD.md` and/or file GitHub issues
+
+## License
+
+This project is licensed under the GNU General Public License v3.0 (GPLv3). See `LICENSE`.
