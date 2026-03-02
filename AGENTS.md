@@ -79,6 +79,8 @@ export PLENARY_ACTOR_ID=codex     # or claude / keeton
 export PLENARY_ACTOR_TYPE=agent   # 'ai' is normalized to 'agent' for compatibility
 ```
 
+`.plenary/` is local runtime state and gitignored. For a committed sample transcript, use `examples/dogfood/events.jsonl`.
+
 ### Web viewer
 
 ```bash
@@ -96,7 +98,7 @@ Plenary exposes an MCP tool server over stdio:
 ./plenary mcp-serve
 ```
 
-Repo-local MCP config for Claude Code is in `.mcp.json` (uses `./plenary mcp-serve` and repo-local `.plenary/events.jsonl`).
+Repo-local MCP config for Claude Code is in `.mcp.json` (uses `./plenary mcp-serve` and local-only `.plenary/events.jsonl`).
 
 Checked-in MCP config variants:
 - `.mcp.claude.json` (actor id `claude`)
@@ -175,7 +177,7 @@ Use Plenary for decisions that matter (roadmap, architecture, ownership splits, 
 - check status (`./plenary status --plenary ...`)
 - take one protocol action (`speak`, `propose`, `consent`, `phase`, etc.)
 - verify once if needed
-- commit/push `.plenary/events.jsonl` (and any relevant doc notes)
+- commit/push protocol notes/docs only (not local `.plenary/` runtime logs)
 - do other work
 
 ### Polling guidance (if you must check)
@@ -190,11 +192,11 @@ Avoid count-threshold assumptions like `events > N`; they were brittle in practi
 
 - Run `git status --short` before and after a work chunk
 - Commit only your intended files
-- Do not sweep in local runtime state unless it is part of the dogfood sync turn
+- Do not sweep in local runtime state
 - Be careful with these common local-noise files:
   - `plenary` (local binary)
   - `cmd/plenary/web/dist/*` (frontend build artifacts)
-  - `.plenary/events.jsonl` (dogfood state; commit only when intentionally syncing protocol actions)
+  - `.plenary/*` (dogfood/runtime state; local only, ignored)
 
 ## Ownership And Status (source of truth)
 

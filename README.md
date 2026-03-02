@@ -4,9 +4,16 @@ Consensus protocol tooling for humans and agents.
 
 Current implementation:
 - Go CLI (`plenary`)
-- JSONL event store (`.plenary/events.jsonl`)
+- JSONL event store (default local runtime path: `.plenary/events.jsonl`)
 - Deterministic reducer for derived snapshots
 - Local web viewer (in progress; served from `cmd/plenary/web`)
+
+## Dogfood Transcript
+
+This repo intentionally includes one public dogfood transcript at `examples/dogfood/events.jsonl` for demos/tests/docs.
+
+- `examples/dogfood/events.jsonl`: committed, intentionally-public sample transcript
+- `.plenary/`: local runtime state (ignored by git; not committed)
 
 ## Quickstart
 

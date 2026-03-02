@@ -83,6 +83,7 @@
 | SSE/webhook notifications | **Claude** | Done | Included in `plenary serve`: per-plenary `/api/plenaries/{id}/stream` and global `/api/stream`. Issue #6 closed. |
 | Wait command (`plenary wait`) | **Claude** | Done | Poll-based wait with --phase, --event-type, --events-after conditions. Issue #9 closed. |
 | Web build tag fix | **Claude** | Done | `go test` works without npm. Build tag `webembed` for full web embed. Issue #8 closed. |
+| Curate public dogfood logs (`.plenary` -> `examples/dogfood`) | **Codex** | Done | Moved transcript to `examples/dogfood/events.jsonl`, added `.plenary/` ignores, and updated README/AGENTS to clarify committed sample vs local runtime |
 | Thin SDK wrappers (Python/TS) | Unclaimed | Pending | Only if MCP adoption proves insufficient |
 | Auth/identity/hosted sync | Unclaimed | Pending | Multi-tenant, deferred until product-market signal |
 | Dogfood UX fixes | Split | Done | Claude: `#2` flag consistency/help (closed), `#7` subcommand help (closed). Codex: `#1` actor type normalization/validation, `#4` discovery ergonomics (list, --last, PLENARY_ID, active proposal shorthand). |
