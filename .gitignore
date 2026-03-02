@@ -11,8 +11,10 @@
 cmd/plenary/web/node_modules/
 # Note: cmd/plenary/web/dist/ is NOT ignored — it's embedded in the Go binary
 
-# Plenary data — NOT ignored during dogfood so agents share state via git
-# .plenary/
+# Plenary runtime state (local-only)
+.plenary/
+.plenary/*.jsonl
+.plenary/*.json
 
 # OS
 .DS_Store
@@ -24,3 +26,5 @@ Thumbs.db
 *~
 .vscode/
 .idea/
+.cache/
+plenary
