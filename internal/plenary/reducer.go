@@ -54,6 +54,7 @@ type Snapshot struct {
 	Deadline            *string               `json:"deadline,omitempty"`
 	QuorumThreshold     *int                  `json:"quorum_threshold,omitempty"`
 	Participants        []ParticipantSnapshot `json:"participants"`
+	Proposals           []ProposalSnapshot    `json:"proposals,omitempty"`
 	ActiveProposal      *ProposalSnapshot     `json:"active_proposal,omitempty"`
 	UnresolvedBlocks    []BlockSnapshot       `json:"unresolved_blocks"`
 	OpenQuestions       []string              `json:"open_questions,omitempty"`
@@ -68,7 +69,12 @@ type Snapshot struct {
 type reducerState struct {
 	snapshot      Snapshot
 	participants  map[string]*ParticipantSnapshot
-	blocks        map[string]BlockSnapshot
+	proposals     map[string]ProposalSnapshot
+	proposalOrder []string
+	activeID      string
+	stances       map[string]map[string]Stance
+	reasons       map[string]map[string]*string
+	blocks        map[string]map[string]BlockSnapshot
 	openQuestions []string
 }
 
@@ -78,10 +84,14 @@ func Reduce(events []Event) (Snapshot, error) {
 			Phase:            PhaseFraming,
 			DecisionRule:     RuleUnanimity,
 			Participants:     []ParticipantSnapshot{},
+			Proposals:        []ProposalSnapshot{},
 			UnresolvedBlocks: []BlockSnapshot{},
 		},
 		participants: map[string]*ParticipantSnapshot{},
-		blocks:       map[string]BlockSnapshot{},
+		proposals:    map[string]ProposalSnapshot{},
+		stances:      map[string]map[string]Stance{},
+		reasons:      map[string]map[string]*string{},
+		blocks:       map[string]map[string]BlockSnapshot{},
 	}
 	for _, evt := range events {
 		if err := ApplyEvent(&state, evt); err != nil {
@@ -137,6 +147,11 @@ func ValidateEvent(snap Snapshot, evt Event, isFirst bool) error {
 		if p.DecisionRule == RuleTimeboxed && p.Deadline == nil {
 			return fmt.Errorf("%w: deadline required for timeboxed decision rule", ErrValidation)
 		}
+		if p.DecisionRule == RuleTimeboxed && p.Deadline != nil {
+			if _, err := time.Parse(time.RFC3339, *p.Deadline); err != nil {
+				return fmt.Errorf("%w: deadline must be valid RFC3339", ErrValidation)
+			}
+		}
 		if p.QuorumThreshold != nil && (*p.QuorumThreshold < 1 || *p.QuorumThreshold > 100) {
 			return fmt.Errorf("%w: quorum_threshold must be 1-100", ErrValidation)
 		}
@@ -154,9 +169,45 @@ func ValidateEvent(snap Snapshot, evt Event, isFirst bool) error {
 		if snap.Phase != PhaseProposal && snap.Phase != PhaseObjections && snap.Phase != PhaseConsensusCheck {
 			return fmt.Errorf("%w: proposal.created not allowed in phase %s", ErrConflict, snap.Phase)
 		}
-	case "block.raised", "consent.given", "stand_aside.given":
-		if snap.ActiveProposal == nil {
-			return fmt.Errorf("%w: no active proposal", ErrConflict)
+	case "proposal.selected":
+		var p ProposalSelectedPayload
+		if err := decodePayload(evt, &p); err != nil {
+			return err
+		}
+		if !proposalExists(snap.Proposals, p.ProposalID) {
+			return fmt.Errorf("%w: unknown proposal_id %s", ErrValidation, p.ProposalID)
+		}
+	case "block.raised":
+		var p ProposalRefTextPayload
+		if err := decodePayload(evt, &p); err != nil {
+			return err
+		}
+		if !proposalExists(snap.Proposals, p.ProposalID) {
+			return fmt.Errorf("%w: unknown proposal_id %s", ErrValidation, p.ProposalID)
+		}
+	case "consent.given":
+		var p ConsentPayload
+		if err := decodePayload(evt, &p); err != nil {
+			return err
+		}
+		if !proposalExists(snap.Proposals, p.ProposalID) {
+			return fmt.Errorf("%w: unknown proposal_id %s", ErrValidation, p.ProposalID)
+		}
+	case "stand_aside.given":
+		var p StandAsidePayload
+		if err := decodePayload(evt, &p); err != nil {
+			return err
+		}
+		if !proposalExists(snap.Proposals, p.ProposalID) {
+			return fmt.Errorf("%w: unknown proposal_id %s", ErrValidation, p.ProposalID)
+		}
+	case "block.withdrawn":
+		var p BlockWithdrawnPayload
+		if err := decodePayload(evt, &p); err != nil {
+			return err
+		}
+		if !proposalExists(snap.Proposals, p.ProposalID) {
+			return fmt.Errorf("%w: unknown proposal_id %s", ErrValidation, p.ProposalID)
 		}
 	}
 	return nil
@@ -217,16 +268,49 @@ func ApplyEvent(state *reducerState, evt Event) error {
 		if err := decodePayload(evt, &p); err != nil {
 			return err
 		}
-		state.snapshot.ActiveProposal = &ProposalSnapshot{
+		prop := ProposalSnapshot{
 			ProposalID:         p.ProposalID,
 			Text:               p.Text,
 			AcceptanceCriteria: p.AcceptanceCriteria,
 		}
-		for _, pt := range state.participants {
-			pt.Stance = StanceUndeclared
-			pt.FinalReason = nil
+		if _, exists := state.proposals[p.ProposalID]; !exists {
+			state.proposalOrder = append(state.proposalOrder, p.ProposalID)
 		}
-		state.blocks = map[string]BlockSnapshot{}
+		state.proposals[p.ProposalID] = prop
+		state.activeID = p.ProposalID
+		ensureProposalState(state, p.ProposalID)
+		touchParticipant(state, evt, nil)
+	case "proposal.selected":
+		var p ProposalSelectedPayload
+		if err := decodePayload(evt, &p); err != nil {
+			return err
+		}
+		if _, exists := state.proposals[p.ProposalID]; exists {
+			state.activeID = p.ProposalID
+		}
+		touchParticipant(state, evt, nil)
+	case "proposal.withdrawn":
+		var p ProposalWithdrawnPayload
+		if err := decodePayload(evt, &p); err != nil {
+			return err
+		}
+		delete(state.proposals, p.ProposalID)
+		delete(state.stances, p.ProposalID)
+		delete(state.reasons, p.ProposalID)
+		delete(state.blocks, p.ProposalID)
+		newOrder := make([]string, 0, len(state.proposalOrder))
+		for _, id := range state.proposalOrder {
+			if id != p.ProposalID {
+				newOrder = append(newOrder, id)
+			}
+		}
+		state.proposalOrder = newOrder
+		if state.activeID == p.ProposalID {
+			state.activeID = ""
+			if len(state.proposalOrder) > 0 {
+				state.activeID = state.proposalOrder[len(state.proposalOrder)-1]
+			}
+		}
 		touchParticipant(state, evt, nil)
 	case "amendment.applied":
 		var p struct {
@@ -236,14 +320,13 @@ func ApplyEvent(state *reducerState, evt Event) error {
 		if err := decodePayload(evt, &p); err != nil {
 			return err
 		}
-		if state.snapshot.ActiveProposal != nil && state.snapshot.ActiveProposal.ProposalID == p.ProposalID {
-			state.snapshot.ActiveProposal.Text = p.NewText
-			for _, pt := range state.participants {
-				if pt.Stance != StanceBlock {
-					pt.Stance = StanceUndeclared
-					pt.FinalReason = nil
-				}
-			}
+		if prop, ok := state.proposals[p.ProposalID]; ok {
+			prop.Text = p.NewText
+			state.proposals[p.ProposalID] = prop
+			// Text changes invalidate prior stances for that proposal.
+			delete(state.stances, p.ProposalID)
+			delete(state.reasons, p.ProposalID)
+			delete(state.blocks, p.ProposalID)
 		}
 		touchParticipant(state, evt, nil)
 	case "block.raised":
@@ -251,6 +334,7 @@ func ApplyEvent(state *reducerState, evt Event) error {
 		if err := decodePayload(evt, &p); err != nil {
 			return err
 		}
+		ensureProposalState(state, p.ProposalID)
 		block := BlockSnapshot{
 			ActorID:     evt.Actor.ActorID,
 			Text:        p.Text,
@@ -259,42 +343,40 @@ func ApplyEvent(state *reducerState, evt Event) error {
 			FailureMode: p.FailureMode,
 			Status:      "open",
 		}
-		state.blocks[evt.Actor.ActorID] = block
-		touchParticipant(state, evt, func(pt *ParticipantSnapshot) {
-			pt.Stance = StanceBlock
-		})
+		state.blocks[p.ProposalID][evt.Actor.ActorID] = block
+		state.stances[p.ProposalID][evt.Actor.ActorID] = StanceBlock
+		state.reasons[p.ProposalID][evt.Actor.ActorID] = nil
+		touchParticipant(state, evt, nil)
 	case "block.withdrawn":
 		var p BlockWithdrawnPayload
 		if err := decodePayload(evt, &p); err != nil {
 			return err
 		}
-		delete(state.blocks, evt.Actor.ActorID)
-		touchParticipant(state, evt, func(pt *ParticipantSnapshot) {
-			if pt.Stance == StanceBlock {
-				pt.Stance = StanceUndeclared
-			}
-			reason := p.Reason
-			pt.FinalReason = &reason
-		})
+		ensureProposalState(state, p.ProposalID)
+		delete(state.blocks[p.ProposalID], evt.Actor.ActorID)
+		state.stances[p.ProposalID][evt.Actor.ActorID] = StanceUndeclared
+		reason := p.Reason
+		state.reasons[p.ProposalID][evt.Actor.ActorID] = &reason
+		touchParticipant(state, evt, nil)
 	case "consent.given":
 		var p ConsentPayload
 		if err := decodePayload(evt, &p); err != nil {
 			return err
 		}
-		touchParticipant(state, evt, func(pt *ParticipantSnapshot) {
-			pt.Stance = StanceConsent
-			pt.FinalReason = p.Reason
-		})
+		ensureProposalState(state, p.ProposalID)
+		state.stances[p.ProposalID][evt.Actor.ActorID] = StanceConsent
+		state.reasons[p.ProposalID][evt.Actor.ActorID] = p.Reason
+		touchParticipant(state, evt, nil)
 	case "stand_aside.given":
 		var p StandAsidePayload
 		if err := decodePayload(evt, &p); err != nil {
 			return err
 		}
-		touchParticipant(state, evt, func(pt *ParticipantSnapshot) {
-			pt.Stance = StanceStandAside
-			reason := p.Reason
-			pt.FinalReason = &reason
-		})
+		ensureProposalState(state, p.ProposalID)
+		state.stances[p.ProposalID][evt.Actor.ActorID] = StanceStandAside
+		reason := p.Reason
+		state.reasons[p.ProposalID][evt.Actor.ActorID] = &reason
+		touchParticipant(state, evt, nil)
 	case "decision.closed":
 		var p DecisionClosedPayload
 		if err := decodePayload(evt, &p); err != nil {
@@ -313,16 +395,55 @@ func ApplyEvent(state *reducerState, evt Event) error {
 }
 
 func finalizeSnapshot(state *reducerState) {
+	proposals := make([]ProposalSnapshot, 0, len(state.proposalOrder))
+	for _, id := range state.proposalOrder {
+		if p, ok := state.proposals[id]; ok {
+			proposals = append(proposals, p)
+		}
+	}
+	state.snapshot.Proposals = proposals
+
+	if state.activeID == "" && len(proposals) > 0 {
+		state.activeID = proposals[len(proposals)-1].ProposalID
+	}
+	if state.activeID != "" {
+		if p, ok := state.proposals[state.activeID]; ok {
+			cp := p
+			state.snapshot.ActiveProposal = &cp
+		} else {
+			state.snapshot.ActiveProposal = nil
+		}
+	} else {
+		state.snapshot.ActiveProposal = nil
+	}
+
 	participants := make([]ParticipantSnapshot, 0, len(state.participants))
 	for _, p := range state.participants {
-		participants = append(participants, *p)
+		cp := *p
+		cp.Stance = StanceUndeclared
+		cp.FinalReason = nil
+		if state.activeID != "" {
+			if perProposal, ok := state.stances[state.activeID]; ok {
+				if stance, ok := perProposal[cp.ActorID]; ok {
+					cp.Stance = stance
+				}
+			}
+			if perProposalReasons, ok := state.reasons[state.activeID]; ok {
+				if reason, ok := perProposalReasons[cp.ActorID]; ok {
+					cp.FinalReason = reason
+				}
+			}
+		}
+		participants = append(participants, cp)
 	}
 	sort.Slice(participants, func(i, j int) bool { return participants[i].ActorID < participants[j].ActorID })
 	state.snapshot.Participants = participants
 
-	blocks := make([]BlockSnapshot, 0, len(state.blocks))
-	for _, b := range state.blocks {
-		blocks = append(blocks, b)
+	blocks := make([]BlockSnapshot, 0)
+	if state.activeID != "" {
+		for _, b := range state.blocks[state.activeID] {
+			blocks = append(blocks, b)
+		}
 	}
 	sort.Slice(blocks, func(i, j int) bool { return blocks[i].ActorID < blocks[j].ActorID })
 	state.snapshot.UnresolvedBlocks = blocks
@@ -434,6 +555,30 @@ func touchParticipant(state *reducerState, evt Event, update func(*ParticipantSn
 	if update != nil {
 		update(item)
 	}
+}
+
+func ensureProposalState(state *reducerState, proposalID string) {
+	if proposalID == "" {
+		return
+	}
+	if _, ok := state.stances[proposalID]; !ok {
+		state.stances[proposalID] = map[string]Stance{}
+	}
+	if _, ok := state.reasons[proposalID]; !ok {
+		state.reasons[proposalID] = map[string]*string{}
+	}
+	if _, ok := state.blocks[proposalID]; !ok {
+		state.blocks[proposalID] = map[string]BlockSnapshot{}
+	}
+}
+
+func proposalExists(proposals []ProposalSnapshot, proposalID string) bool {
+	for _, p := range proposals {
+		if p.ProposalID == proposalID {
+			return true
+		}
+	}
+	return false
 }
 
 func decodePayload[T any](evt Event, out *T) error {

@@ -9,9 +9,9 @@ import { Badge } from "@/components/ui/badge";
 import type { Snapshot, PlenaryEvent } from "../types";
 import { stanceBadgeVariant } from "../utils";
 import { PhaseStepper } from "./PhaseStepper";
-import { StanceSummary } from "./StanceSummary";
 import { EventTimeline } from "./EventTimeline";
 import { CopyButton } from "./CopyButton";
+import { ProposalCard } from "./ProposalCard";
 
 export function PlenaryDetail({
   snapshot,
@@ -131,31 +131,24 @@ export function PlenaryDetail({
         </Card>
       )}
 
-      {/* Active Proposal */}
-      {snapshot.active_proposal && (
-        <Card className="border-yellow-200 bg-yellow-50/30">
-          <CardHeader>
-            <CardTitle className="text-lg">Active Proposal</CardTitle>
-            <CardDescription>
-              <CopyButton text={snapshot.active_proposal.proposal_id} label="proposal ID" />
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <p className="whitespace-pre-wrap">{snapshot.active_proposal.text}</p>
-            {snapshot.active_proposal.acceptance_criteria && (
-              <p className="text-sm text-muted-foreground mt-2">
-                <span className="font-medium">Criteria:</span>{" "}
-                {snapshot.active_proposal.acceptance_criteria}
-              </p>
-            )}
-            {snapshot.participants.length > 0 && (
-              <div className="mt-3">
-                <StanceSummary participants={snapshot.participants} />
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
+      {/* Proposals */}
+      {(snapshot.proposals && snapshot.proposals.length > 0
+        ? snapshot.proposals
+        : snapshot.active_proposal
+        ? [snapshot.active_proposal]
+        : []
+      ).map((proposal) => (
+        <ProposalCard
+          key={proposal.proposal_id}
+          proposal={proposal}
+          isActive={proposal.proposal_id === snapshot.active_proposal?.proposal_id}
+          participants={
+            proposal.proposal_id === snapshot.active_proposal?.proposal_id
+              ? snapshot.participants
+              : undefined
+          }
+        />
+      ))}
 
       {/* Participants */}
       <Card>

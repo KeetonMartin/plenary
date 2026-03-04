@@ -114,15 +114,24 @@ type TextPayload struct {
 }
 
 type ProposalCreatedPayload struct {
-	ProposalID          string  `json:"proposal_id"`
-	Text                string  `json:"text"`
-	AcceptanceCriteria  *string `json:"acceptance_criteria,omitempty"`
+	ProposalID         string  `json:"proposal_id"`
+	Text               string  `json:"text"`
+	AcceptanceCriteria *string `json:"acceptance_criteria,omitempty"`
+}
+
+type ProposalSelectedPayload struct {
+	ProposalID string `json:"proposal_id"`
+}
+
+type ProposalWithdrawnPayload struct {
+	ProposalID string  `json:"proposal_id"`
+	Reason     *string `json:"reason,omitempty"`
 }
 
 type ProposalRefTextPayload struct {
-	ProposalID string  `json:"proposal_id"`
-	Text       string  `json:"text"`
-	Principle  *string `json:"principle,omitempty"`
+	ProposalID  string  `json:"proposal_id"`
+	Text        string  `json:"text"`
+	Principle   *string `json:"principle,omitempty"`
 	FailureMode *string `json:"failure_mode,omitempty"`
 }
 
@@ -168,15 +177,14 @@ type DecisionRecordActionItem struct {
 }
 
 type DecisionRecord struct {
-	Resolution       string                     `json:"resolution"`
-	RationaleBullets []string                   `json:"rationale_bullets,omitempty"`
+	Resolution       string                      `json:"resolution"`
+	RationaleBullets []string                    `json:"rationale_bullets,omitempty"`
 	Participants     []DecisionRecordParticipant `json:"participants"`
-	Objections       []DecisionRecordObjection  `json:"objections,omitempty"`
-	ActionItems      []DecisionRecordActionItem `json:"action_items,omitempty"`
+	Objections       []DecisionRecordObjection   `json:"objections,omitempty"`
+	ActionItems      []DecisionRecordActionItem  `json:"action_items,omitempty"`
 }
 
 type DecisionClosedPayload struct {
 	Outcome        Outcome        `json:"outcome"`
 	DecisionRecord DecisionRecord `json:"decision_record"`
 }
-

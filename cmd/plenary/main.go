@@ -52,6 +52,8 @@ func main() {
 		err = cmdStatus(store, args)
 	case "propose":
 		err = cmdPropose(store, args)
+	case "select-proposal":
+		err = cmdSelectProposal(store, args)
 	case "consent":
 		err = cmdConsent(store, args)
 	case "block":
@@ -109,6 +111,7 @@ Commands:
   list         List plenaries in the store
   status       Show derived state of a plenary
   propose      Create a formal proposal
+  select-proposal  Select the active proposal for consensus checks
   consent      Consent to the active proposal
   block        Raise a block against the active proposal
   stand-aside  Stand aside (disagree but won't block)
@@ -175,37 +178,48 @@ Required:
 Optional:
   --criteria <text>  Acceptance criteria`,
 
-	"consent": `Usage: plenary consent --plenary <id> --proposal <id> [--reason <text>]
+	"select-proposal": `Usage: plenary select-proposal --plenary <id> --proposal <id>
+
+Select which proposal is active for consensus checks and close-readiness.
+
+Required:
+  --plenary <id>     Plenary ID
+  --proposal <id>    Proposal ID to activate`,
+
+	"consent": `Usage: plenary consent --plenary <id> [--proposal <id> | --active] [--reason <text>]
 
 Consent to the active proposal.
 
 Required:
   --plenary <id>     Plenary ID
-  --proposal <id>    Proposal ID (from 'plenary status')
+  Proposal target    Provide --proposal <id>, or --active. If exactly one proposal
+                     exists, target can be omitted.
 
 Optional:
   --reason <text>    Reason for consenting`,
 
-	"block": `Usage: plenary block --plenary <id> --proposal <id> --reason <text> [--principle <text>] [--failure-mode <text>]
+	"block": `Usage: plenary block --plenary <id> [--proposal <id> | --active] --reason <text> [--principle <text>] [--failure-mode <text>]
 
 Raise a block against the active proposal.
 
 Required:
   --plenary <id>      Plenary ID
-  --proposal <id>     Proposal ID
+  Proposal target     Provide --proposal <id>, or --active. If exactly one proposal
+                      exists, target can be omitted.
   --reason <text>     Why you are blocking
 
 Optional:
   --principle <text>      Principle being violated
   --failure-mode <text>   What failure this would cause`,
 
-	"stand-aside": `Usage: plenary stand-aside --plenary <id> --proposal <id> --reason <text>
+	"stand-aside": `Usage: plenary stand-aside --plenary <id> [--proposal <id> | --active] --reason <text>
 
 Stand aside from the active proposal (disagree but won't block consensus).
 
 Required:
   --plenary <id>     Plenary ID
-  --proposal <id>    Proposal ID
+  Proposal target    Provide --proposal <id>, or --active. If exactly one proposal
+                     exists, target can be omitted.
   --reason <text>    Why you are standing aside`,
 
 	"speak": `Usage: plenary speak --plenary <id> --text <text>
@@ -451,6 +465,11 @@ func eventPayloadSummary(evt plenary.Event) string {
 		if json.Unmarshal(evt.Payload, &p) == nil {
 			return fmt.Sprintf("proposal=%s text=%q", p.ProposalID, p.Text)
 		}
+	case "proposal.selected":
+		var p plenary.ProposalSelectedPayload
+		if json.Unmarshal(evt.Payload, &p) == nil {
+			return fmt.Sprintf("proposal=%s selected", p.ProposalID)
+		}
 	case "consent.given":
 		var p plenary.ConsentPayload
 		if json.Unmarshal(evt.Payload, &p) == nil {
@@ -584,10 +603,22 @@ func resolveProposalID(store *plenary.JSONLStore, plenaryID string, args []strin
 	} else {
 		args = rest
 	}
-	_, args = hasFlag(args, "--active")
+	useActive, args := hasFlag(args, "--active")
 	snap, _, err := getSnapshot(store, plenaryID)
 	if err != nil {
 		return "", args, err
+	}
+	if useActive {
+		if snap.ActiveProposal == nil {
+			return "", args, fmt.Errorf("%w: no active proposal (pass --proposal <id>)", plenary.ErrConflict)
+		}
+		return snap.ActiveProposal.ProposalID, args, nil
+	}
+	if len(snap.Proposals) == 1 {
+		return snap.Proposals[0].ProposalID, args, nil
+	}
+	if len(snap.Proposals) > 1 {
+		return "", args, fmt.Errorf("%w: multiple proposals exist (pass --proposal <id> or --active)", plenary.ErrValidation)
 	}
 	if snap.ActiveProposal == nil {
 		return "", args, fmt.Errorf("%w: no active proposal (pass --proposal <id>)", plenary.ErrConflict)
@@ -630,15 +661,11 @@ func cmdCreate(store *plenary.JSONLStore, args []string) error {
 		payload.Deadline = &deadline
 	}
 	if quorumStr != "" {
-		q := 0
-		for _, c := range quorumStr {
-			if c >= '0' && c <= '9' {
-				q = q*10 + int(c-'0')
-			}
+		q, parseErr := strconv.Atoi(strings.TrimSpace(quorumStr))
+		if parseErr != nil {
+			return fmt.Errorf("%w: --quorum-threshold must be an integer", plenary.ErrValidation)
 		}
-		if q > 0 {
-			payload.QuorumThreshold = &q
-		}
+		payload.QuorumThreshold = &q
 	}
 
 	evt, err := plenary.NewEvent(plenaryID, actor, "plenary.created", payload)
@@ -646,7 +673,7 @@ func cmdCreate(store *plenary.JSONLStore, args []string) error {
 		return err
 	}
 
-	if err := store.Append(evt); err != nil {
+	if err := appendAndValidate(store, evt); err != nil {
 		return err
 	}
 
@@ -800,6 +827,37 @@ func cmdPropose(store *plenary.JSONLStore, args []string) error {
 		"plenary_id":  plenaryID,
 		"proposal_id": proposalID,
 		"status":      "proposed",
+	})
+}
+
+func cmdSelectProposal(store *plenary.JSONLStore, args []string) error {
+	actor, err := getActor()
+	if err != nil {
+		return err
+	}
+
+	plenaryID, args, err := resolvePlenaryID(store, args)
+	if err != nil {
+		return err
+	}
+	proposalID, _, err := requireFlag(args, "--proposal")
+	if err != nil {
+		return err
+	}
+
+	payload := plenary.ProposalSelectedPayload{ProposalID: proposalID}
+	evt, err := plenary.NewEvent(plenaryID, actor, "proposal.selected", payload)
+	if err != nil {
+		return err
+	}
+	if err := appendAndValidate(store, evt); err != nil {
+		return err
+	}
+
+	return printJSON(map[string]string{
+		"plenary_id":  plenaryID,
+		"proposal_id": proposalID,
+		"status":      "proposal_selected",
 	})
 }
 

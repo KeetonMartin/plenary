@@ -339,6 +339,77 @@ func TestCLIActorTypeNormalizationAndValidation(t *testing.T) {
 	}
 }
 
+func TestCLICreateValidatesQuorumThresholdAndDeadline(t *testing.T) {
+	bin := buildBinary(t)
+	store := filepath.Join(t.TempDir(), "events.jsonl")
+
+	runExpectFail(t, bin, store, "keeton", "human", 2,
+		"create", "--topic", "Bad quorum", "--decision-rule", "quorum", "--quorum-threshold", "abc70xyz")
+	runExpectFail(t, bin, store, "keeton", "human", 2,
+		"create", "--topic", "Bad quorum 2", "--decision-rule", "quorum", "--quorum-threshold", "garbage")
+	runExpectFail(t, bin, store, "keeton", "human", 2,
+		"create", "--topic", "Bad deadline", "--decision-rule", "timeboxed", "--deadline", "not-a-time")
+}
+
+func TestCLIProposalResolutionWithMultipleProposals(t *testing.T) {
+	bin := buildBinary(t)
+	store := filepath.Join(t.TempDir(), "events.jsonl")
+
+	pid := run(t, bin, store, "keeton", "human", "create", "--topic", "Multi proposal")["plenary_id"]
+	run(t, bin, store, "claude", "agent", "join", "--plenary", pid)
+	run(t, bin, store, "codex", "agent", "join", "--plenary", pid)
+	run(t, bin, store, "keeton", "human", "phase", "--plenary", pid, "--from", "framing", "--to", "divergence")
+	run(t, bin, store, "keeton", "human", "phase", "--plenary", pid, "--from", "divergence", "--to", "proposal")
+
+	prop1 := run(t, bin, store, "claude", "agent", "propose", "--plenary", pid, "--text", "Proposal A")["proposal_id"]
+	run(t, bin, store, "keeton", "human", "phase", "--plenary", pid, "--from", "proposal", "--to", "consensus_check")
+	// second proposal is allowed in consensus_check and becomes active
+	prop2 := run(t, bin, store, "codex", "agent", "propose", "--plenary", pid, "--text", "Proposal B")["proposal_id"]
+
+	// Ambiguous without --proposal or --active when multiple proposals exist.
+	runExpectFail(t, bin, store, "keeton", "human", 2,
+		"consent", "--plenary", pid)
+
+	// --active should still resolve and succeed.
+	run(t, bin, store, "keeton", "human",
+		"consent", "--plenary", pid, "--active", "--reason", "latest")
+
+	status := runStatus(t, bin, store, pid)
+	active, ok := status["active_proposal"].(map[string]any)
+	if !ok || active["proposal_id"] != prop2 {
+		t.Fatalf("expected active proposal %s, got %v", prop2, status["active_proposal"])
+	}
+
+	// select-proposal should change active proposal.
+	run(t, bin, store, "keeton", "human", "select-proposal", "--plenary", pid, "--proposal", prop1)
+	status = runStatus(t, bin, store, pid)
+	active, ok = status["active_proposal"].(map[string]any)
+	if !ok || active["proposal_id"] != prop1 {
+		t.Fatalf("expected active proposal %s after select-proposal, got %v", prop1, status["active_proposal"])
+	}
+
+	participants, ok := status["participants"].([]any)
+	if !ok {
+		t.Fatalf("participants missing or wrong type: %T", status["participants"])
+	}
+	foundKeeton := false
+	for _, raw := range participants {
+		p, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		if p["actor_id"] == "keeton" {
+			foundKeeton = true
+			if p["stance"] != "undeclared" {
+				t.Fatalf("expected keeton stance=undeclared on selected prop1, got %v", p["stance"])
+			}
+		}
+	}
+	if !foundKeeton {
+		t.Fatal("expected keeton participant")
+	}
+}
+
 func TestCLIStatusWithoutPlenaryIDFails(t *testing.T) {
 	bin := buildBinary(t)
 	store := filepath.Join(t.TempDir(), "events.jsonl")
