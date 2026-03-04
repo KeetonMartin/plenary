@@ -142,7 +142,7 @@ func cmdServe(store *plenary.JSONLStore, args []string) error {
 			Actor           plenary.Actor        `json:"actor"`
 			Topic           string               `json:"topic"`
 			Context         string               `json:"context,omitempty"`
-			DecisionRule    plenary.DecisionRule  `json:"decision_rule"`
+			DecisionRule    plenary.DecisionRule `json:"decision_rule"`
 			Deadline        *string              `json:"deadline,omitempty"`
 			QuorumThreshold *int                 `json:"quorum_threshold,omitempty"`
 		}
@@ -393,6 +393,34 @@ func cmdServe(store *plenary.JSONLStore, args []string) error {
 			return
 		}
 		jsonResponse(w, map[string]string{"plenary_id": pid, "proposal_id": proposalID, "status": "proposed"})
+	})
+
+	mux.HandleFunc("POST /api/plenaries/{id}/select", func(w http.ResponseWriter, r *http.Request) {
+		corsHeaders(w)
+		pid := r.PathValue("id")
+		var req struct {
+			Actor      plenary.Actor `json:"actor"`
+			ProposalID string        `json:"proposal_id"`
+		}
+		if err := readJSON(r, &req); err != nil {
+			jsonError(w, err.Error(), 400)
+			return
+		}
+		if req.Actor.ActorID == "" || req.ProposalID == "" {
+			jsonError(w, "actor.actor_id and proposal_id are required", 400)
+			return
+		}
+		payload := plenary.ProposalSelectedPayload{ProposalID: req.ProposalID}
+		evt, err := plenary.NewEvent(pid, req.Actor, "proposal.selected", payload)
+		if err != nil {
+			jsonError(w, err.Error(), 500)
+			return
+		}
+		if err := appendAndBroadcast(store, hub, evt); err != nil {
+			handlePlenaryError(w, err)
+			return
+		}
+		jsonResponse(w, map[string]string{"plenary_id": pid, "proposal_id": req.ProposalID, "status": "selected"})
 	})
 
 	mux.HandleFunc("POST /api/plenaries/{id}/consent", func(w http.ResponseWriter, r *http.Request) {
