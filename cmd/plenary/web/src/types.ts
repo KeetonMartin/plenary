@@ -52,6 +52,7 @@ export interface Snapshot {
   decision_rule: string;
   deadline?: string;
   participants: Participant[];
+  proposals?: Proposal[];
   active_proposal?: Proposal;
   unresolved_blocks: Block[];
   open_questions?: string[];

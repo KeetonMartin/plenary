@@ -551,6 +551,19 @@ func TestReduceTimeboxedRule(t *testing.T) {
 		}
 		_ = events // suppress unused
 	})
+
+	t.Run("validation: timeboxed deadline must be RFC3339", func(t *testing.T) {
+		deadline := "not-a-time"
+		evt := makeEvent(pid, "keeton", "human", "plenary.created", PlenaryCreatedPayload{
+			Topic:        "Test",
+			DecisionRule: RuleTimeboxed,
+			Deadline:     &deadline,
+		})
+		err := ValidateEvent(Snapshot{}, evt, true)
+		if err == nil {
+			t.Error("expected validation error: invalid RFC3339 deadline")
+		}
+	})
 }
 
 func TestReduceProposalResetsStances(t *testing.T) {
@@ -583,6 +596,58 @@ func TestReduceProposalResetsStances(t *testing.T) {
 		if p.Stance != StanceUndeclared {
 			t.Errorf("participant %s should have stance reset to undeclared after new proposal, got %s", p.ActorID, p.Stance)
 		}
+	}
+}
+
+func TestReduceProposalSelectionRestoresPerProposalStances(t *testing.T) {
+	pid := "p1"
+	prop1 := "prop1"
+	prop2 := "prop2"
+
+	selectProposal := func(actorID, proposalID string) Event {
+		return makeEvent(pid, actorID, "human", "proposal.selected", ProposalSelectedPayload{
+			ProposalID: proposalID,
+		})
+	}
+
+	events := []Event{
+		plenaryCreated(pid, "keeton", RuleUnanimity),
+		participantJoined(pid, "claude", "agent"),
+		phaseSet(pid, "keeton", PhaseFraming, PhaseDivergence),
+		phaseSet(pid, "keeton", PhaseDivergence, PhaseProposal),
+		proposalCreated(pid, "claude", prop1, "Use Go"),
+		consentGiven(pid, "claude", prop1),
+		proposalCreated(pid, "keeton", prop2, "Use TypeScript"),
+	}
+
+	snap, err := Reduce(events)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snap.ActiveProposal == nil || snap.ActiveProposal.ProposalID != prop2 {
+		t.Fatalf("expected active proposal %s, got %+v", prop2, snap.ActiveProposal)
+	}
+	for _, p := range snap.Participants {
+		if p.ActorID == "claude" && p.Stance != StanceUndeclared {
+			t.Fatalf("expected undeclared stance on active prop2, got %s", p.Stance)
+		}
+	}
+
+	events = append(events, selectProposal("keeton", prop1))
+	snap, err = Reduce(events)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snap.ActiveProposal == nil || snap.ActiveProposal.ProposalID != prop1 {
+		t.Fatalf("expected active proposal %s, got %+v", prop1, snap.ActiveProposal)
+	}
+	for _, p := range snap.Participants {
+		if p.ActorID == "claude" && p.Stance != StanceConsent {
+			t.Fatalf("expected consent stance restored for prop1, got %s", p.Stance)
+		}
+	}
+	if len(snap.Proposals) != 2 {
+		t.Fatalf("expected 2 proposals in snapshot, got %d", len(snap.Proposals))
 	}
 }
 
